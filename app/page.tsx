@@ -67,6 +67,14 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "export", label: "Export" },
 ];
 
+const REPORT_DETECTION_GROUPS: { concepts: SurveyVariableKey[]; title: string }[] = [
+  { title: "Population", concepts: ["age", "sex", "householdSize", "children"] },
+  { title: "Income", concepts: ["individualIncome", "householdIncome"] },
+  { title: "Labour", concepts: ["employment", "occupation"] },
+  { title: "Context", concepts: ["region", "year", "quarter"] },
+  { title: "Identifiers", concepts: ["householdId", "personId"] },
+];
+
 const SAMPLE_ROWS: DataRow[] = [
   { respondent_id: 1, region: "North", age: 22, sex: "Female", education: "University", employment_status: "Student", monthly_income: 950, household_size: 3, children: 0, housing_tenure: "Rent" },
   { respondent_id: 2, region: "North", age: 41, sex: "Male", education: "Secondary", employment_status: "Employed", monthly_income: 3200, household_size: 4, children: 2, housing_tenure: "Own" },
@@ -991,13 +999,21 @@ export default function Home() {
   const recommendedAnalyses = useMemo(() => {
     const recommendations = [
       surveyVariables.age || surveyVariables.sex || surveyVariables.household
-        ? "Start with the Population tab to inspect age structure, sex/gender composition, household size, and geography."
+        ? "Population Profile: inspect age structure, sex/gender composition, household size, dependents, and geography."
         : "",
       surveyVariables.income
-        ? "Use the Income tab to compare income distribution and group averages. Check missingness before interpreting inequality."
+        ? "Income Analysis: compare income distribution, medians, ranges, and group averages. Check missingness before interpreting inequality."
         : "",
       surveyVariables.employment
-        ? "Use the Labour tab to describe employment status and relate labour-market groups to education or income."
+        ? "Labour Analysis: describe employment status and relate labour-market groups to education or income."
+        : "",
+      correlations.length > 0
+        ? `Correlation Analysis: review the strongest numeric relationship, ${correlations[0].left} x ${correlations[0].right} (${correlations[0].value.toFixed(3)}).`
+        : numericColumns.length >= 2
+          ? "Correlation Analysis: compare numeric variables to identify relationships worth investigating."
+          : "",
+      numericColumns.length > 0
+        ? "Visualization Opportunities: use histograms for distributions, bar charts for group comparisons, and scatterplots for relationships."
         : "",
       surveyDetections.year.column || surveyDetections.quarter.column
         ? "If this file combines periods, compare results by year or quarter before pooling observations."
@@ -1013,7 +1029,29 @@ export default function Home() {
     return recommendations.length
       ? recommendations
       : ["Inspect Data Quality first, then use Visualization to choose relevant numeric and categorical variables for exploratory analysis."];
-  }, [dataQuality.completeness, dataQuality.duplicateRows, surveyDetections.quarter.column, surveyDetections.year.column, surveyVariables]);
+  }, [correlations, dataQuality.completeness, dataQuality.duplicateRows, numericColumns.length, surveyDetections.quarter.column, surveyDetections.year.column, surveyVariables]);
+
+  const executiveSummary = useMemo(() => {
+    const detectedCore = [
+      surveyVariables.age ? "age" : "",
+      surveyVariables.sex ? "sex/gender" : "",
+      surveyVariables.income ? "income" : "",
+      surveyVariables.employment ? "employment status" : "",
+      surveyVariables.region ? "region/geography" : "",
+    ].filter(Boolean);
+    const qualitySentence =
+      missingProfiles.length > 0
+        ? `${missingProfiles.slice(0, 2).length === 1 ? "One variable has" : "Two variables have"} substantial missingness and should be reviewed before analysis.`
+        : "No missing values were detected in the loaded cells.";
+    const suitability =
+      surveyVariables.age || surveyVariables.sex || surveyVariables.income || surveyVariables.employment
+        ? "The dataset appears suitable for demographic and social survey analysis."
+        : "The dataset can be explored, but core survey concepts were only partially detected.";
+
+    return `This dataset contains ${rows.length.toLocaleString()} observations and ${columns.length.toLocaleString()} variables. Completeness is ${dataQuality.completeness.toFixed(1)}%. ${
+      detectedCore.length ? `${detectedCore.join(", ")} ${detectedCore.length === 1 ? "was" : "were"} successfully detected.` : "No core demographic concepts were confidently detected."
+    } ${suitability} ${qualitySentence}`;
+  }, [columns.length, dataQuality.completeness, missingProfiles, rows.length, surveyVariables]);
 
   const selectedX = xColumn || numericColumns[0] || "";
   const selectedY = yColumn || numericColumns.find((column) => column !== selectedX) || numericColumns[0] || "";
@@ -1297,19 +1335,31 @@ export default function Home() {
             )}
 
             {activeTab === "report" && (
-              <div className="space-y-5">
-                <GlassPanel className="p-5">
+              <div className="dataset-report space-y-5">
+                <GlassPanel className="report-hero p-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <h2 className="text-xl font-semibold text-white">Dataset Report</h2>
+                      <p className="report-kicker">Flagship pre-analysis report</p>
+                      <h2 className="text-2xl font-semibold text-white">Dataset Report</h2>
                       <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
-                        Understand the dataset before analysing it. This report summarizes structure, missingness, duplicates, detected survey variables, suspicious columns, and suggested next steps.
+                        Understand the dataset before analysing it. Inspired by dfSummary(), adapted into a modern research dashboard for survey and demographic datasets.
                       </p>
                     </div>
                     <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
                       {fileName || "Untitled dataset"}
                     </div>
                   </div>
+                </GlassPanel>
+
+                <GlassPanel className="p-5">
+                  <p className="report-section-label">Section 6</p>
+                  <h3 className="text-lg font-semibold text-white">Executive Summary</h3>
+                  <p className="mt-3 max-w-5xl text-base leading-7 text-slate-700">{executiveSummary}</p>
+                </GlassPanel>
+
+                <GlassPanel className="p-5">
+                  <p className="report-section-label">Section 1</p>
+                  <h3 className="text-lg font-semibold text-white">Dataset Overview</h3>
                   <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
                     <div className="metric-tile">
                       <span>Rows</span>
@@ -1335,6 +1385,22 @@ export default function Home() {
                       <span>Completeness</span>
                       <strong>{dataQuality.completeness.toFixed(1)}%</strong>
                     </div>
+                    <div className="metric-tile">
+                      <span>Numeric vars</span>
+                      <strong>{typeCounts.numeric}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Categorical vars</span>
+                      <strong>{typeCounts.text}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Mixed vars</span>
+                      <strong>{typeCounts.mixed}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Empty vars</span>
+                      <strong>{typeCounts.empty}</strong>
+                    </div>
                   </div>
                   <div className="quality-bar mt-5">
                     <div style={{ width: `${dataQuality.completeness}%` }} />
@@ -1343,7 +1409,8 @@ export default function Home() {
 
                 <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
                   <GlassPanel className="p-5">
-                    <h3 className="text-lg font-semibold text-white">Variable type counts</h3>
+                    <p className="report-section-label">Section 2</p>
+                    <h3 className="text-lg font-semibold text-white">Variable Inventory</h3>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <div className="metric-tile">
                         <span>Numeric</span>
@@ -1365,13 +1432,24 @@ export default function Home() {
                   </GlassPanel>
 
                   <GlassPanel className="p-5">
-                    <h3 className="text-lg font-semibold text-white">Detected survey variables</h3>
-                    <div className="report-variable-list mt-4">
-                      {surveyDetectionList.map((detection) => (
-                        <div key={detection.concept}>
-                          <span>{detection.friendlyLabel}</span>
-                          <strong>{detection.column || "Not detected"}</strong>
-                          <em>{detection.confidence}% / {detection.method}</em>
+                    <p className="report-section-label">Section 2</p>
+                    <h3 className="text-lg font-semibold text-white">Survey Variable Detection</h3>
+                    <div className="report-detection-groups mt-4">
+                      {REPORT_DETECTION_GROUPS.map((group) => (
+                        <div className="report-detection-group" key={group.title}>
+                          <h4>{group.title}</h4>
+                          <div className="report-variable-list mt-3">
+                            {group.concepts.map((concept) => {
+                              const detection = surveyDetections[concept];
+                              return (
+                                <div key={concept}>
+                                  <span>{detection.friendlyLabel}</span>
+                                  <strong>{detection.column || "Not detected"}</strong>
+                                  <em>{detection.confidence}% / {detection.method}</em>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1379,6 +1457,7 @@ export default function Home() {
                 </div>
 
                 <GlassPanel className="p-5">
+                  <p className="report-section-label">Section 3</p>
                   <h3 className="text-lg font-semibold text-white">Variable profiles</h3>
                   <p className="mt-1 text-sm text-slate-400">
                     A compact profile for each variable, including completeness, unique values, numeric statistics, and mini distributions.
@@ -1423,6 +1502,7 @@ export default function Home() {
 
                 <div className="grid gap-5 xl:grid-cols-2">
                   <GlassPanel className="p-5">
+                    <p className="report-section-label">Section 4</p>
                     <h3 className="text-lg font-semibold text-white">Columns with most missing values</h3>
                     <div className="mt-4 space-y-3">
                       {missingProfiles.length ? (
@@ -1441,7 +1521,36 @@ export default function Home() {
                   </GlassPanel>
 
                   <GlassPanel className="p-5">
+                    <p className="report-section-label">Section 4</p>
                     <h3 className="text-lg font-semibold text-white">Suspicious columns</h3>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <InsightCard
+                        detail={
+                          dataQuality.duplicateRows > 0
+                            ? `${dataQuality.duplicateRows.toLocaleString()} duplicate row${dataQuality.duplicateRows === 1 ? "" : "s"} detected.`
+                            : "No duplicate rows detected."
+                        }
+                        label="Duplicates"
+                        tone={dataQuality.duplicateRows > 0 ? "warning" : "default"}
+                      />
+                      <InsightCard
+                        detail={
+                          typeCounts.mixed > 0
+                            ? `${typeCounts.mixed.toLocaleString()} mixed-type variable${typeCounts.mixed === 1 ? "" : "s"} detected.`
+                            : "No mixed-type variables detected."
+                        }
+                        label="Mixed values"
+                        tone={typeCounts.mixed > 0 ? "warning" : "default"}
+                      />
+                      <InsightCard
+                        detail={
+                          suspiciousColumns.some((profile) => profile.reasons.some((reason) => reason.includes("identifier")))
+                            ? "Some columns are unique in every row and may be identifiers."
+                            : "No likely identifier columns flagged by uniqueness checks."
+                        }
+                        label="Potential IDs"
+                      />
+                    </div>
                     <div className="mt-4 space-y-3">
                       {suspiciousColumns.length ? (
                         suspiciousColumns.map((profile) => (
@@ -1460,6 +1569,7 @@ export default function Home() {
                 </div>
 
                 <GlassPanel className="p-5">
+                  <p className="report-section-label">Section 5</p>
                   <h3 className="text-lg font-semibold text-white">Recommended analyses</h3>
                   <div className="mt-4 grid gap-3 lg:grid-cols-2">
                     {recommendedAnalyses.map((recommendation) => (

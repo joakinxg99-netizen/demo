@@ -475,6 +475,46 @@ select:disabled {
   margin-top: 0.18rem;
 }
 
+.dataset-report .glass-panel {
+  box-shadow:
+    0 18px 42px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.report-hero {
+  background:
+    linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(255, 255, 255, 0.94)),
+    rgba(248, 250, 252, 0.96);
+}
+
+.report-kicker,
+.report-section-label {
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.11em;
+  margin-bottom: 0.36rem;
+  text-transform: uppercase;
+}
+
+.report-detection-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+.report-detection-group {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 1rem;
+}
+
+.report-detection-group h4 {
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
 .variable-profile-grid {
   display: grid;
   gap: 1rem;
