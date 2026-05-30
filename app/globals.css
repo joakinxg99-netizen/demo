@@ -161,6 +161,25 @@ select:disabled {
   padding: 0.62rem 0.7rem;
 }
 
+.search-input {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  padding: 0.82rem 0.95rem;
+}
+
+.search-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+}
+
+.search-input::placeholder {
+  color: #94a3b8;
+}
+
 .field-select:focus,
 .filter-input:focus {
   border-color: #3b82f6;
@@ -284,6 +303,89 @@ select:disabled {
   color: #0f172a;
   font-size: 1.45rem;
   font-weight: 760;
+}
+
+.insight-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 1rem;
+}
+
+.insight-card span {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.insight-card p {
+  margin-top: 0.45rem;
+  color: #1e293b;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.insight-card-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.domain-card {
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.94);
+  box-shadow:
+    0 18px 48px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  color: #0f172a;
+  padding: 1.25rem;
+}
+
+.domain-card h3 {
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 760;
+}
+
+.quality-bar {
+  height: 0.72rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.quality-bar div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+}
+
+.column-profile {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 1rem;
+}
+
+.column-profile strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.column-profile span {
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.74rem;
+  font-weight: 750;
+  padding: 0.22rem 0.55rem;
+  text-transform: capitalize;
 }
 
 .glass-panel table {

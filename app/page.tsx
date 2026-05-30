@@ -9,9 +9,21 @@ type CellValue = string | number | null;
 type DataRow = Record<string, CellValue>;
 type FilterState = Record<string, { query: string; min: string; max: string }>;
 type SortState = { column: string; direction: "asc" | "desc" } | null;
-type TabKey = "overview" | "visualization" | "correlation" | "preview" | "export";
+type TabKey = "overview" | "population" | "income" | "labour" | "insights" | "quality" | "visualization" | "preview" | "export";
 type ChartType = "scatter" | "bar" | "line" | "histogram";
 type PlotTrace = Record<string, unknown>;
+type ColumnProfile = {
+  average: number | null;
+  column: string;
+  completeness: number;
+  max: number | null;
+  min: number | null;
+  missing: number;
+  numericCount: number;
+  textCount: number;
+  type: "empty" | "mixed" | "numeric" | "text";
+  unique: number;
+};
 
 const Plot = dynamic(() => import("react-plotly.js"), {
   ssr: false,
@@ -20,25 +32,29 @@ const Plot = dynamic(() => import("react-plotly.js"), {
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Overview" },
+  { key: "population", label: "Population" },
+  { key: "income", label: "Income" },
+  { key: "labour", label: "Labour" },
+  { key: "insights", label: "Insights" },
+  { key: "quality", label: "Data Quality" },
   { key: "visualization", label: "Visualization" },
-  { key: "correlation", label: "Correlation" },
   { key: "preview", label: "Data Preview" },
   { key: "export", label: "Export" },
 ];
 
 const SAMPLE_ROWS: DataRow[] = [
-  { country: "Japan", region: "East Asia", year: 2024, population_m: 123.2, median_age: 49.1, fertility_rate: 1.2, urban_pct: 92, life_expectancy: 84.8 },
-  { country: "Nigeria", region: "West Africa", year: 2024, population_m: 229.2, median_age: 17.2, fertility_rate: 5.0, urban_pct: 54, life_expectancy: 54.6 },
-  { country: "Brazil", region: "South America", year: 2024, population_m: 217.6, median_age: 34.6, fertility_rate: 1.6, urban_pct: 87, life_expectancy: 76.4 },
-  { country: "Germany", region: "Western Europe", year: 2024, population_m: 83.3, median_age: 45.7, fertility_rate: 1.5, urban_pct: 78, life_expectancy: 81.4 },
-  { country: "India", region: "South Asia", year: 2024, population_m: 1450.9, median_age: 28.8, fertility_rate: 2.0, urban_pct: 37, life_expectancy: 72.2 },
-  { country: "Mexico", region: "North America", year: 2024, population_m: 129.7, median_age: 30.6, fertility_rate: 1.8, urban_pct: 82, life_expectancy: 75.1 },
-  { country: "Egypt", region: "North Africa", year: 2024, population_m: 114.5, median_age: 24.2, fertility_rate: 2.8, urban_pct: 43, life_expectancy: 71.6 },
-  { country: "Canada", region: "North America", year: 2024, population_m: 39.7, median_age: 41.8, fertility_rate: 1.4, urban_pct: 82, life_expectancy: 82.9 },
-  { country: "Indonesia", region: "Southeast Asia", year: 2024, population_m: 283.5, median_age: 30.4, fertility_rate: 2.1, urban_pct: 59, life_expectancy: 72.8 },
-  { country: "France", region: "Western Europe", year: 2024, population_m: 66.5, median_age: 42.3, fertility_rate: 1.8, urban_pct: 82, life_expectancy: 82.7 },
-  { country: "Ethiopia", region: "East Africa", year: 2024, population_m: 129.7, median_age: 19.1, fertility_rate: 3.9, urban_pct: 23, life_expectancy: 66.5 },
-  { country: "South Korea", region: "East Asia", year: 2024, population_m: 51.7, median_age: 45.1, fertility_rate: 0.8, urban_pct: 81, life_expectancy: 83.7 },
+  { respondent_id: 1, region: "North", age: 22, sex: "Female", education: "University", employment_status: "Student", monthly_income: 950, household_size: 3, children: 0, housing_tenure: "Rent" },
+  { respondent_id: 2, region: "North", age: 41, sex: "Male", education: "Secondary", employment_status: "Employed", monthly_income: 3200, household_size: 4, children: 2, housing_tenure: "Own" },
+  { respondent_id: 3, region: "South", age: 35, sex: "Female", education: "University", employment_status: "Employed", monthly_income: 4100, household_size: 2, children: 1, housing_tenure: "Own" },
+  { respondent_id: 4, region: "South", age: 67, sex: "Female", education: "Primary", employment_status: "Retired", monthly_income: 1800, household_size: 1, children: 3, housing_tenure: "Own" },
+  { respondent_id: 5, region: "East", age: 29, sex: "Male", education: "Technical", employment_status: "Self-employed", monthly_income: 2700, household_size: 5, children: 2, housing_tenure: "Rent" },
+  { respondent_id: 6, region: "East", age: 48, sex: "Female", education: "Secondary", employment_status: "Unemployed", monthly_income: 620, household_size: 4, children: 2, housing_tenure: "Rent" },
+  { respondent_id: 7, region: "West", age: 53, sex: "Male", education: "University", employment_status: "Employed", monthly_income: 5300, household_size: 3, children: 1, housing_tenure: "Own" },
+  { respondent_id: 8, region: "West", age: 19, sex: "Female", education: "Secondary", employment_status: "Student", monthly_income: 420, household_size: 4, children: 0, housing_tenure: "Family" },
+  { respondent_id: 9, region: "Central", age: 38, sex: "Male", education: "Technical", employment_status: "Employed", monthly_income: 3600, household_size: 2, children: 0, housing_tenure: "Rent" },
+  { respondent_id: 10, region: "Central", age: 44, sex: "Female", education: "University", employment_status: "Self-employed", monthly_income: 3900, household_size: 3, children: 1, housing_tenure: "Own" },
+  { respondent_id: 11, region: "North", age: 61, sex: "Male", education: "Primary", employment_status: "Retired", monthly_income: 1550, household_size: 2, children: 3, housing_tenure: "Own" },
+  { respondent_id: 12, region: "South", age: 26, sex: "Female", education: "University", employment_status: "Employed", monthly_income: 2800, household_size: 1, children: 0, housing_tenure: "Rent" },
 ];
 
 const compactNumber = new Intl.NumberFormat("en", {
@@ -104,6 +120,187 @@ function isNumericColumn(rows: DataRow[], column: string) {
 
 function getNumericValues(rows: DataRow[], column: string) {
   return rows.map((row) => row[column]).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+}
+
+function getColumnProfiles(rows: DataRow[], columns: string[]): ColumnProfile[] {
+  return columns.map((column) => {
+    const values = rows.map((row) => row[column] ?? null);
+    const present = values.filter((value) => value !== null);
+    const numericValues = present.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const textCount = present.filter((value) => typeof value === "string").length;
+    const type =
+      present.length === 0
+        ? "empty"
+        : numericValues.length === present.length
+          ? "numeric"
+          : textCount === present.length
+            ? "text"
+            : "mixed";
+
+    return {
+      average: numericValues.length ? mean(numericValues) : null,
+      column,
+      completeness: rows.length ? (present.length / rows.length) * 100 : 0,
+      max: numericValues.length ? Math.max(...numericValues) : null,
+      min: numericValues.length ? Math.min(...numericValues) : null,
+      missing: values.length - present.length,
+      numericCount: numericValues.length,
+      textCount,
+      type,
+      unique: new Set(present.map((value) => String(value))).size,
+    };
+  });
+}
+
+function getDuplicateCount(rows: DataRow[], columns: string[]) {
+  const counts = new Map<string, number>();
+
+  rows.forEach((row) => {
+    const key = JSON.stringify(columns.map((column) => row[column] ?? null));
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+
+  return Array.from(counts.values()).reduce((total, count) => total + Math.max(0, count - 1), 0);
+}
+
+function getDataQuality(rows: DataRow[], columns: string[], profiles: ColumnProfile[]) {
+  const totalCells = rows.length * columns.length;
+  const missingValues = profiles.reduce((total, profile) => total + profile.missing, 0);
+
+  return {
+    completeness: totalCells ? ((totalCells - missingValues) / totalCells) * 100 : 0,
+    duplicateRows: getDuplicateCount(rows, columns),
+    missingValues,
+    totalCells,
+  };
+}
+
+function normalizeColumnName(column: string) {
+  return column.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function findColumn(columns: string[], patterns: string[]) {
+  return (
+    columns.find((column) => {
+      const normalized = normalizeColumnName(column);
+      return patterns.some((pattern) => normalized === pattern || normalized.includes(pattern));
+    }) ?? ""
+  );
+}
+
+function getSurveyVariables(columns: string[]) {
+  return {
+    age: findColumn(columns, ["age", "respondent_age", "edad", "idade"]),
+    children: findColumn(columns, ["children", "num_children", "kids", "dependents"]),
+    education: findColumn(columns, ["education", "educ", "schooling", "qualification"]),
+    employment: findColumn(columns, ["employment", "employment_status", "labour", "labor", "work_status", "occupation", "job_status"]),
+    household: findColumn(columns, ["household_size", "hh_size", "household", "family_size"]),
+    income: findColumn(columns, ["income", "earnings", "wage", "salary", "pay", "revenue"]),
+    region: findColumn(columns, ["region", "state", "province", "county", "district", "area", "location"]),
+    sex: findColumn(columns, ["sex", "gender", "male_female"]),
+  };
+}
+
+function frequency(rows: DataRow[], column: string) {
+  if (!column) {
+    return [];
+  }
+
+  const counts = rows.reduce((map, row) => {
+    const value = row[column];
+    if (value === null || value === undefined) {
+      return map;
+    }
+    const key = String(value);
+    map.set(key, (map.get(key) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+
+  return Array.from(counts.entries())
+    .map(([label, count]) => ({ count, label, percent: rows.length ? (count / rows.length) * 100 : 0 }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function numericSummary(rows: DataRow[], column: string) {
+  const values = column ? getNumericValues(rows, column) : [];
+
+  if (!values.length) {
+    return null;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  return {
+    average: mean(values),
+    count: values.length,
+    max: Math.max(...values),
+    median,
+    min: Math.min(...values),
+  };
+}
+
+function averageByGroup(rows: DataRow[], groupColumn: string, valueColumn: string) {
+  if (!groupColumn || !valueColumn) {
+    return [];
+  }
+
+  const groups = rows.reduce((map, row) => {
+    const group = row[groupColumn];
+    const value = row[valueColumn];
+
+    if (group === null || group === undefined || typeof value !== "number") {
+      return map;
+    }
+
+    const key = String(group);
+    const current = map.get(key) ?? { count: 0, total: 0 };
+    map.set(key, { count: current.count + 1, total: current.total + value });
+    return map;
+  }, new Map<string, { count: number; total: number }>());
+
+  return Array.from(groups.entries())
+    .map(([label, item]) => ({ average: item.total / item.count, count: item.count, label }))
+    .sort((a, b) => b.average - a.average);
+}
+
+function ageBand(age: number) {
+  if (age < 18) return "Under 18";
+  if (age < 30) return "18-29";
+  if (age < 45) return "30-44";
+  if (age < 60) return "45-59";
+  return "60+";
+}
+
+function ageDistribution(rows: DataRow[], ageColumn: string) {
+  if (!ageColumn) {
+    return [];
+  }
+
+  const counts = rows.reduce((map, row) => {
+    const age = row[ageColumn];
+    if (typeof age !== "number") {
+      return map;
+    }
+    const band = ageBand(age);
+    map.set(band, (map.get(band) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+
+  return ["Under 18", "18-29", "30-44", "45-59", "60+"]
+    .map((label) => ({ count: counts.get(label) ?? 0, label, percent: rows.length ? ((counts.get(label) ?? 0) / rows.length) * 100 : 0 }))
+    .filter((item) => item.count > 0);
+}
+
+function rowMatchesSearch(row: DataRow, columns: string[], query: string) {
+  const normalized = query.trim().toLowerCase();
+
+  if (!normalized) {
+    return true;
+  }
+
+  return columns.some((column) => String(row[column] ?? "").toLowerCase().includes(normalized));
 }
 
 function mean(values: number[]) {
@@ -205,6 +402,40 @@ function EmptyState({ title, detail, action }: { title: string; detail: string; 
         <p className="text-lg font-semibold text-white">{title}</p>
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">{detail}</p>
         {action && <div className="mt-5">{action}</div>}
+      </div>
+    </div>
+  );
+}
+
+function InsightCard({ detail, label, tone = "default" }: { detail: string; label: string; tone?: "default" | "warning" }) {
+  return (
+    <div className={`insight-card ${tone === "warning" ? "insight-card-warning" : ""}`}>
+      <span>{label}</span>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
+function FrequencyList({ items, title }: { items: { count: number; label: string; percent: number }[]; title: string }) {
+  return (
+    <div className="domain-card">
+      <h3>{title}</h3>
+      <div className="mt-4 space-y-3">
+        {items.length ? (
+          items.slice(0, 6).map((item) => (
+            <div key={item.label}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium text-slate-700">{item.label}</span>
+                <span className="text-slate-500">{item.count.toLocaleString()} ({item.percent.toFixed(0)}%)</span>
+              </div>
+              <div className="quality-bar mt-2">
+                <div style={{ width: `${Math.min(100, item.percent)}%` }} />
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-slate-500">No matching variable detected.</p>
+        )}
       </div>
     </div>
   );
@@ -400,6 +631,7 @@ export default function Home() {
   const [sort, setSort] = useState<SortState>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [chartType, setChartType] = useState<ChartType>("scatter");
+  const [globalSearch, setGlobalSearch] = useState("");
   const [xColumn, setXColumn] = useState("");
   const [yColumn, setYColumn] = useState("");
   const [groupColumn, setGroupColumn] = useState("");
@@ -407,11 +639,18 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
 
   const columns = useMemo(() => getColumns(rows), [rows]);
+  const surveyVariables = useMemo(() => getSurveyVariables(columns), [columns]);
   const numericColumns = useMemo(() => columns.filter((column) => isNumericColumn(rows, column)), [columns, rows]);
   const textColumns = useMemo(() => columns.filter((column) => !numericColumns.includes(column)), [columns, numericColumns]);
+  const columnProfiles = useMemo(() => getColumnProfiles(rows, columns), [columns, rows]);
+  const dataQuality = useMemo(() => getDataQuality(rows, columns, columnProfiles), [columnProfiles, columns, rows]);
+  const searchedRows = useMemo(
+    () => rows.filter((row) => rowMatchesSearch(row, columns, globalSearch)),
+    [columns, globalSearch, rows],
+  );
 
   const filteredRows = useMemo(() => {
-    const nextRows = rows.filter((row) =>
+    const nextRows = searchedRows.filter((row) =>
       columns.every((column) => {
         const filter = filters[column];
         if (!filter) {
@@ -440,7 +679,7 @@ export default function Home() {
       const comparison = firstValue > secondValue ? 1 : firstValue < secondValue ? -1 : 0;
       return sort.direction === "asc" ? comparison : -comparison;
     });
-  }, [columns, filters, rows, sort]);
+  }, [columns, filters, searchedRows, sort]);
 
   const correlations = useMemo(() => {
     return numericColumns
@@ -468,8 +707,34 @@ export default function Home() {
     });
   }, [filteredRows, numericColumns]);
 
+  const notableProfiles = useMemo(
+    () =>
+      columnProfiles
+        .filter((profile) => profile.type === "numeric" && profile.average !== null)
+        .slice(0, 8),
+    [columnProfiles],
+  );
+
+  const missingProfiles = useMemo(
+    () => columnProfiles.filter((profile) => profile.missing > 0).sort((a, b) => b.missing - a.missing),
+    [columnProfiles],
+  );
+
   const selectedX = xColumn || numericColumns[0] || "";
   const selectedY = yColumn || numericColumns.find((column) => column !== selectedX) || numericColumns[0] || "";
+  const ageSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.age), [filteredRows, surveyVariables.age]);
+  const householdSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.household), [filteredRows, surveyVariables.household]);
+  const incomeSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
+  const ageBands = useMemo(() => ageDistribution(filteredRows, surveyVariables.age), [filteredRows, surveyVariables.age]);
+  const sexDistribution = useMemo(() => frequency(filteredRows, surveyVariables.sex), [filteredRows, surveyVariables.sex]);
+  const employmentDistribution = useMemo(() => frequency(filteredRows, surveyVariables.employment), [filteredRows, surveyVariables.employment]);
+  const educationDistribution = useMemo(() => frequency(filteredRows, surveyVariables.education), [filteredRows, surveyVariables.education]);
+  const regionDistribution = useMemo(() => frequency(filteredRows, surveyVariables.region), [filteredRows, surveyVariables.region]);
+  const incomeBySex = useMemo(() => averageByGroup(filteredRows, surveyVariables.sex, surveyVariables.income), [filteredRows, surveyVariables.income, surveyVariables.sex]);
+  const incomeByEmployment = useMemo(
+    () => averageByGroup(filteredRows, surveyVariables.employment, surveyVariables.income),
+    [filteredRows, surveyVariables.employment, surveyVariables.income],
+  );
   const regression = useMemo(() => linearRegression(filteredRows, selectedX, selectedY), [filteredRows, selectedX, selectedY]);
   const plotData = useMemo(
     () =>
@@ -522,6 +787,7 @@ export default function Home() {
       setActiveTab("overview");
       setFilters({});
       setFiltersOpen(false);
+      setGlobalSearch("");
       setGroupColumn("");
       setSort(null);
     } catch (caught) {
@@ -551,6 +817,7 @@ export default function Home() {
     setFileName("sample-demography.csv");
     setFilters({});
     setFiltersOpen(false);
+    setGlobalSearch("");
     setGroupColumn("region");
     setSort(null);
     setError("");
@@ -589,21 +856,21 @@ export default function Home() {
       <div className="cosmic-grid" />
       <div className="star-field" />
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 sm:gap-6">
-        <header className="flex flex-col items-center gap-5 py-6 text-center sm:py-8">
+        <header className="flex flex-col items-center gap-3 py-4 text-center sm:py-5">
           <div className="rounded-full border border-blue-200/25 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-blue-100">
             Demography Research Studio
           </div>
           <div className="max-w-4xl">
-            <h1 className="text-4xl font-semibold tracking-normal text-white sm:text-6xl">Demography Explorer</h1>
-            <p className="mt-4 text-base leading-7 text-slate-300 sm:text-lg">
-              Upload population, migration, age, fertility, income, or region data and explore patterns in a clear client-side workspace.
+            <h1 className="text-3xl font-semibold tracking-normal text-white sm:text-5xl">Demography Explorer</h1>
+            <p className="mt-3 text-base leading-7 text-slate-300 sm:text-lg">
+              Upload social survey microdata and get demographic, income, labour, and data quality interpretation in a clear client-side workspace.
             </p>
           </div>
         </header>
 
         <GlassPanel className="mx-auto w-full max-w-4xl p-4 sm:p-6">
           <div
-            className={`flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center transition sm:min-h-64 sm:p-8 ${
+            className={`flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed p-5 text-center transition sm:min-h-48 sm:p-6 ${
               dragging ? "border-blue-300 bg-blue-50/80" : "border-slate-300 bg-slate-50/70"
             }`}
             onDragLeave={() => setDragging(false)}
@@ -614,14 +881,14 @@ export default function Home() {
             onDrop={handleDrop}
           >
             <input accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileChange} ref={inputRef} type="file" />
-            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-2xl text-blue-700 sm:h-16 sm:w-16">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-2xl text-blue-700 sm:h-14 sm:w-14">
               ↑
             </div>
-            <h2 className="text-2xl font-semibold text-white">Drop a CSV or Excel file</h2>
+            <h2 className="text-2xl font-semibold text-white">Drop a survey CSV or Excel file</h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
-              Data stays in your browser. The first sheet is loaded for Excel workbooks, and numeric-looking values are detected automatically.
+              Data stays in your browser. Variables like age, sex, income, household size, employment, education, and region are detected automatically.
             </p>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
               <button className="primary-button" onClick={() => inputRef.current?.click()} type="button">
                 Select file
               </button>
@@ -641,12 +908,34 @@ export default function Home() {
         {!hasData && (
           <EmptyState
             title="Your dashboard is waiting for a dataset"
-            detail="Use the uploader above or load the sample to unlock tabs, charts, correlations, filters, preview, and export tools."
+            detail="Use the uploader above or load the sample social survey to unlock demographic profiles, income and labour analysis, data quality checks, insights, charts, preview, and export tools."
           />
         )}
 
         {hasData && (
           <>
+            <GlassPanel className="p-4 sm:p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Dataset search</h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Search across every survey variable before profiles, insights, charts, preview, and export are calculated.
+                  </p>
+                </div>
+                <div className="w-full lg:max-w-md">
+                  <input
+                    className="search-input"
+                    onChange={(event) => setGlobalSearch(event.target.value)}
+                    placeholder="Search countries, regions, years, values..."
+                    value={globalSearch}
+                  />
+                  <p className="mt-2 text-xs text-slate-500">
+                    {searchedRows.length.toLocaleString()} of {rows.length.toLocaleString()} rows match search.
+                  </p>
+                </div>
+              </div>
+            </GlassPanel>
+
             <nav aria-label="Explorer sections" className="tab-shell">
               {TABS.map((tab) => (
                 <button
@@ -709,6 +998,53 @@ export default function Home() {
                   </GlassPanel>
                 </div>
 
+                <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                  <GlassPanel className="p-5">
+                    <h2 className="text-xl font-semibold text-white">Dashboard summary</h2>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <InsightCard
+                        detail={
+                          ageSummary
+                            ? `This looks like respondent-level data with an average age of ${formatValue(ageSummary.average)} and ${filteredRows.length.toLocaleString()} analysed records.`
+                            : `This dataset has ${filteredRows.length.toLocaleString()} analysed records. Add an age variable to unlock a fuller population profile.`
+                        }
+                        label="Survey profile"
+                      />
+                      <InsightCard
+                        detail={
+                          incomeSummary
+                            ? `Average observed income is ${formatValue(incomeSummary.average)} with a median of ${formatValue(incomeSummary.median)}.`
+                            : "No income variable was detected. Name income-like columns with terms such as income, earnings, wage, salary, or pay."
+                        }
+                        label="Income profile"
+                      />
+                    </div>
+                  </GlassPanel>
+
+                  <GlassPanel className="p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h2 className="text-xl font-semibold text-white">Data quality</h2>
+                        <p className="mt-1 text-sm text-slate-400">Completeness across all loaded cells.</p>
+                      </div>
+                      <strong className="text-3xl text-white">{dataQuality.completeness.toFixed(0)}%</strong>
+                    </div>
+                    <div className="quality-bar mt-5">
+                      <div style={{ width: `${dataQuality.completeness}%` }} />
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="metric-tile">
+                        <span>Missing values</span>
+                        <strong>{dataQuality.missingValues.toLocaleString()}</strong>
+                      </div>
+                      <div className="metric-tile">
+                        <span>Duplicate rows</span>
+                        <strong>{dataQuality.duplicateRows.toLocaleString()}</strong>
+                      </div>
+                    </div>
+                  </GlassPanel>
+                </div>
+
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   {primaryStats.length > 0 ? (
                     primaryStats.map((stat) => (
@@ -734,6 +1070,320 @@ export default function Home() {
                     </GlassPanel>
                   )}
                 </div>
+              </div>
+            )}
+
+            {activeTab === "population" && (
+              <div className="space-y-5">
+                <GlassPanel className="p-5">
+                  <h2 className="text-xl font-semibold text-white">Population profile</h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    The app scans survey variables for age, sex or gender, region, education, household size, and children to describe the population under study.
+                  </p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="metric-tile">
+                      <span>Analysed records</span>
+                      <strong>{filteredRows.length.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Average age</span>
+                      <strong>{ageSummary ? formatValue(ageSummary.average) : "-"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Median age</span>
+                      <strong>{ageSummary ? formatValue(ageSummary.median) : "-"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Avg household size</span>
+                      <strong>{householdSummary ? formatValue(householdSummary.average) : "-"}</strong>
+                    </div>
+                  </div>
+                </GlassPanel>
+
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <FrequencyList items={ageBands} title={`Age structure${surveyVariables.age ? ` (${surveyVariables.age})` : ""}`} />
+                  <FrequencyList items={sexDistribution} title={`Sex / gender${surveyVariables.sex ? ` (${surveyVariables.sex})` : ""}`} />
+                  <FrequencyList items={regionDistribution} title={`Geography${surveyVariables.region ? ` (${surveyVariables.region})` : ""}`} />
+                  <FrequencyList items={educationDistribution} title={`Education${surveyVariables.education ? ` (${surveyVariables.education})` : ""}`} />
+                </div>
+              </div>
+            )}
+
+            {activeTab === "income" && (
+              <div className="space-y-5">
+                <GlassPanel className="p-5">
+                  <h2 className="text-xl font-semibold text-white">Income analysis</h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Income variables are detected from labels such as income, earnings, wage, salary, or pay. Group comparisons use available sex/gender and labour variables.
+                  </p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="metric-tile">
+                      <span>Income variable</span>
+                      <strong className="truncate text-base">{surveyVariables.income || "Not detected"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Average income</span>
+                      <strong>{incomeSummary ? formatValue(incomeSummary.average) : "-"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Median income</span>
+                      <strong>{incomeSummary ? formatValue(incomeSummary.median) : "-"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Income range</span>
+                      <strong className="text-base">{incomeSummary ? `${formatValue(incomeSummary.min)} - ${formatValue(incomeSummary.max)}` : "-"}</strong>
+                    </div>
+                  </div>
+                </GlassPanel>
+
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Average income by sex / gender</h3>
+                    <div className="mt-4 space-y-3">
+                      {incomeBySex.length ? (
+                        incomeBySex.map((item) => (
+                          <InsightCard detail={`${item.count.toLocaleString()} records average ${formatValue(item.average)}.`} key={item.label} label={item.label} />
+                        ))
+                      ) : (
+                        <EmptyState title="No group comparison yet" detail="Add both income and sex/gender variables to compare average income by group." />
+                      )}
+                    </div>
+                  </GlassPanel>
+
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Average income by labour status</h3>
+                    <div className="mt-4 space-y-3">
+                      {incomeByEmployment.length ? (
+                        incomeByEmployment.map((item) => (
+                          <InsightCard detail={`${item.count.toLocaleString()} records average ${formatValue(item.average)}.`} key={item.label} label={item.label} />
+                        ))
+                      ) : (
+                        <EmptyState title="No labour comparison yet" detail="Add income and employment/labour variables to compare earnings by labour-market status." />
+                      )}
+                    </div>
+                  </GlassPanel>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "labour" && (
+              <div className="space-y-5">
+                <GlassPanel className="p-5">
+                  <h2 className="text-xl font-semibold text-white">Labour profile</h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Labour variables are detected from employment, work status, labour, occupation, job status, and similar field names.
+                  </p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="metric-tile">
+                      <span>Labour variable</span>
+                      <strong className="truncate text-base">{surveyVariables.employment || "Not detected"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Statuses</span>
+                      <strong>{employmentDistribution.length || "-"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Largest group</span>
+                      <strong className="truncate text-base">{employmentDistribution[0]?.label ?? "-"}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Largest share</span>
+                      <strong>{employmentDistribution[0] ? `${employmentDistribution[0].percent.toFixed(0)}%` : "-"}</strong>
+                    </div>
+                  </div>
+                </GlassPanel>
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <FrequencyList items={employmentDistribution} title="Employment status distribution" />
+                  <FrequencyList items={educationDistribution} title="Education profile for labour context" />
+                </div>
+              </div>
+            )}
+
+            {activeTab === "insights" && (
+              <div className="space-y-5">
+                <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+                  <GlassPanel className="p-5">
+                    <h2 className="text-xl font-semibold text-white">Automatic insights</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Generated from the current search and filters where appropriate, with quality checks from the full loaded dataset.
+                    </p>
+                    <div className="mt-5 grid gap-3">
+                      <InsightCard
+                        detail={
+                          ageSummary
+                            ? `The analysed population has an average age of ${formatValue(ageSummary.average)} and a median age of ${formatValue(ageSummary.median)}.`
+                            : "No age variable was detected, so the population age profile is limited."
+                        }
+                        label="Population structure"
+                      />
+                      <InsightCard
+                        detail={
+                          employmentDistribution[0]
+                            ? `${employmentDistribution[0].label} is the largest labour-market category (${employmentDistribution[0].percent.toFixed(0)}% of analysed records).`
+                            : "No employment or labour-market status variable was detected."
+                        }
+                        label="Labour profile"
+                      />
+                      <InsightCard
+                        detail={
+                          incomeSummary
+                            ? `Observed income has a median of ${formatValue(incomeSummary.median)} and ranges from ${formatValue(incomeSummary.min)} to ${formatValue(incomeSummary.max)}.`
+                            : "No income-like variable was detected."
+                        }
+                        label="Income distribution"
+                      />
+                      <InsightCard
+                        detail={
+                          correlations[0]
+                            ? `Among numeric variables, the strongest relationship is ${correlations[0].left} x ${correlations[0].right} at ${correlations[0].value.toFixed(3)}.`
+                            : "No numeric relationship can be calculated yet. At least two numeric variables with paired values are needed."
+                        }
+                        label="Strongest numeric relationship"
+                      />
+                      {notableProfiles.slice(0, 4).map((profile) => (
+                        <InsightCard
+                          detail={`${profile.column}: average ${formatValue(profile.average)}, low ${formatValue(profile.min)}, high ${formatValue(profile.max)}.`}
+                          key={profile.column}
+                          label="Numeric summary"
+                        />
+                      ))}
+                      {missingProfiles.length > 0 ? (
+                        <InsightCard
+                          detail={`${missingProfiles[0].column} has ${missingProfiles[0].missing.toLocaleString()} missing values. Review this before drawing conclusions from that field.`}
+                          label="Missing value warning"
+                          tone="warning"
+                        />
+                      ) : (
+                        <InsightCard detail="No missing values were detected across the loaded cells." label="Missing value warning" />
+                      )}
+                      {dataQuality.duplicateRows > 0 ? (
+                        <InsightCard
+                          detail={`${dataQuality.duplicateRows.toLocaleString()} duplicate row${dataQuality.duplicateRows === 1 ? "" : "s"} detected based on all columns.`}
+                          label="Duplicate warning"
+                          tone="warning"
+                        />
+                      ) : (
+                        <InsightCard detail="No duplicate rows detected using all columns." label="Duplicate warning" />
+                      )}
+                    </div>
+                  </GlassPanel>
+
+                  <GlassPanel className="p-5">
+                    <h2 className="text-xl font-semibold text-white">Data Quality</h2>
+                    <p className="mt-1 text-sm text-slate-400">Completeness, duplicate checks, and type detection for the loaded dataset.</p>
+                    <div className="mt-5">
+                      <div className="flex items-end justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-400">Completeness score</p>
+                          <p className="mt-1 text-4xl font-semibold text-white">{dataQuality.completeness.toFixed(1)}%</p>
+                        </div>
+                        <p className="text-right text-sm text-slate-500">
+                          {dataQuality.missingValues.toLocaleString()} missing of {dataQuality.totalCells.toLocaleString()} cells
+                        </p>
+                      </div>
+                      <div className="quality-bar mt-4">
+                        <div style={{ width: `${dataQuality.completeness}%` }} />
+                      </div>
+                    </div>
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <div className="metric-tile">
+                        <span>Missing values</span>
+                        <strong>{dataQuality.missingValues.toLocaleString()}</strong>
+                      </div>
+                      <div className="metric-tile">
+                        <span>Duplicate rows</span>
+                        <strong>{dataQuality.duplicateRows.toLocaleString()}</strong>
+                      </div>
+                    </div>
+                  </GlassPanel>
+                </div>
+
+                <GlassPanel className="p-5">
+                  <h2 className="text-xl font-semibold text-white">Column type detection</h2>
+                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {columnProfiles.map((profile) => (
+                      <div className="column-profile" key={profile.column}>
+                        <div className="flex items-center justify-between gap-3">
+                          <strong>{profile.column}</strong>
+                          <span>{profile.type}</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">
+                          {profile.unique.toLocaleString()} unique / {profile.missing.toLocaleString()} missing / {profile.completeness.toFixed(0)}% complete
+                        </p>
+                        {profile.type === "numeric" && (
+                          <p className="mt-2 text-sm text-slate-500">
+                            Avg {formatValue(profile.average)} / Min {formatValue(profile.min)} / Max {formatValue(profile.max)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </GlassPanel>
+              </div>
+            )}
+
+            {activeTab === "quality" && (
+              <div className="space-y-5">
+                <GlassPanel className="p-5">
+                  <h2 className="text-xl font-semibold text-white">Data Quality</h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Review whether the survey file is ready for demographic analysis before interpreting substantive patterns.
+                  </p>
+                  <div className="mt-5">
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-400">Completeness score</p>
+                        <p className="mt-1 text-4xl font-semibold text-white">{dataQuality.completeness.toFixed(1)}%</p>
+                      </div>
+                      <p className="text-right text-sm text-slate-500">
+                        {dataQuality.missingValues.toLocaleString()} missing of {dataQuality.totalCells.toLocaleString()} cells
+                      </p>
+                    </div>
+                    <div className="quality-bar mt-4">
+                      <div style={{ width: `${dataQuality.completeness}%` }} />
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="metric-tile">
+                      <span>Missing values</span>
+                      <strong>{dataQuality.missingValues.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Duplicate rows</span>
+                      <strong>{dataQuality.duplicateRows.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Variables</span>
+                      <strong>{columns.length}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Detected survey vars</span>
+                      <strong>{Object.values(surveyVariables).filter(Boolean).length}</strong>
+                    </div>
+                  </div>
+                </GlassPanel>
+
+                <GlassPanel className="p-5">
+                  <h2 className="text-xl font-semibold text-white">Variable readiness</h2>
+                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {columnProfiles.map((profile) => (
+                      <div className="column-profile" key={profile.column}>
+                        <div className="flex items-center justify-between gap-3">
+                          <strong>{profile.column}</strong>
+                          <span>{profile.type}</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">
+                          {profile.unique.toLocaleString()} unique / {profile.missing.toLocaleString()} missing / {profile.completeness.toFixed(0)}% complete
+                        </p>
+                        {profile.type === "numeric" && (
+                          <p className="mt-2 text-sm text-slate-500">
+                            Avg {formatValue(profile.average)} / Min {formatValue(profile.min)} / Max {formatValue(profile.max)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </GlassPanel>
               </div>
             )}
 
@@ -815,55 +1465,6 @@ export default function Home() {
                   )}
                 </div>
               </GlassPanel>
-            )}
-
-            {activeTab === "correlation" && (
-              <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-                <GlassPanel className="p-5">
-                  <h2 className="text-xl font-semibold text-white">Correlation analysis</h2>
-                  <p className="mt-1 text-sm text-slate-400">Pearson coefficients ranked by absolute strength.</p>
-                  <div className="mt-5 space-y-3">
-                    {correlations.slice(0, 12).map((item) => (
-                      <div className="rounded-md border border-white/10 bg-white/[0.04] p-3" key={`${item.left}-${item.right}`}>
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="truncate text-slate-200">{item.left} x {item.right}</span>
-                          <span className={item.value >= 0 ? "text-blue-700" : "text-violet-700"}>{item.value.toFixed(3)}</span>
-                        </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                          <div className={item.value >= 0 ? "h-full bg-blue-500" : "h-full bg-violet-400"} style={{ width: `${Math.abs(item.value) * 100}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                    {correlations.length === 0 && <EmptyState title="No correlations yet" detail="Upload at least two numeric columns with three paired values, or loosen filters until paired values reappear." />}
-                  </div>
-                </GlassPanel>
-
-                <GlassPanel className="p-5">
-                  <h2 className="text-xl font-semibold text-white">Linear regression</h2>
-                  <p className="mt-1 text-sm text-slate-400">Client-side ordinary least squares for the selected X and Y fields.</p>
-                  {regression ? (
-                    <div className="mt-5 grid gap-4 sm:grid-cols-3">
-                      <div className="metric-tile">
-                        <span>Slope</span>
-                        <strong>{regression.slope.toFixed(4)}</strong>
-                      </div>
-                      <div className="metric-tile">
-                        <span>Intercept</span>
-                        <strong>{regression.intercept.toFixed(4)}</strong>
-                      </div>
-                      <div className="metric-tile">
-                        <span>R squared</span>
-                        <strong>{regression.r2.toFixed(4)}</strong>
-                      </div>
-                    </div>
-                  ) : (
-                    <EmptyState title="Regression needs paired numeric values" detail="Select numeric X and Y fields in Visualization and keep at least three matching rows after filters." />
-                  )}
-                  <div className="mt-5 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
-                    Current model: {selectedY || "Y"} = {regression ? regression.slope.toFixed(4) : "m"} * {selectedX || "X"} + {regression ? regression.intercept.toFixed(4) : "b"}
-                  </div>
-                </GlassPanel>
-              </div>
             )}
 
             {activeTab === "preview" && (
