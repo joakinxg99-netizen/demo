@@ -12,6 +12,28 @@ type SortState = { column: string; direction: "asc" | "desc" } | null;
 type TabKey = "overview" | "population" | "income" | "labour" | "insights" | "quality" | "visualization" | "preview" | "export";
 type ChartType = "scatter" | "bar" | "line" | "histogram";
 type PlotTrace = Record<string, unknown>;
+type SurveyVariableKey =
+  | "age"
+  | "sex"
+  | "individualIncome"
+  | "householdIncome"
+  | "employment"
+  | "occupation"
+  | "education"
+  | "region"
+  | "householdSize"
+  | "children"
+  | "year"
+  | "quarter"
+  | "householdId"
+  | "personId";
+type SurveyDetection = {
+  column: string;
+  concept: SurveyVariableKey;
+  confidence: number;
+  friendlyLabel: string;
+  method: string;
+};
 type ColumnProfile = {
   average: number | null;
   column: string;
@@ -76,6 +98,114 @@ const CHART_COLORS = [
   "#64748b",
   "#4f46e5",
 ];
+
+const SURVEY_CONCEPTS: Record<
+  SurveyVariableKey,
+  {
+    aliases: string[];
+    ephAliases?: string[];
+    friendlyLabel: string;
+    keywords: string[];
+    partials: string[];
+  }
+> = {
+  age: {
+    aliases: ["age", "respondent_age", "person_age", "edad", "idade", "anos", "edad_anios", "edad_anos"],
+    ephAliases: ["ch06"],
+    friendlyLabel: "Age",
+    keywords: ["age", "edad", "idade"],
+    partials: ["respondent_age", "person_age", "age_year", "edad", "idade"],
+  },
+  sex: {
+    aliases: ["sex", "gender", "sexo", "genero", "gênero", "male_female", "female_male"],
+    ephAliases: ["ch04"],
+    friendlyLabel: "Sex / Gender",
+    keywords: ["sex", "gender", "sexo", "genero"],
+    partials: ["gender", "sexo", "genero", "male_female"],
+  },
+  individualIncome: {
+    aliases: ["income", "individual_income", "personal_income", "earnings", "wage", "salary", "pay", "ingreso", "ingresos", "salario", "renda", "rendimento"],
+    ephAliases: ["p47t"],
+    friendlyLabel: "Individual income",
+    keywords: ["income", "earnings", "wage", "salary", "pay", "ingreso", "ingresos", "salario", "renda", "rendimento"],
+    partials: ["individual_income", "personal_income", "monthly_income", "labor_income", "labour_income", "ingreso", "renda", "rendimento"],
+  },
+  householdIncome: {
+    aliases: ["household_income", "family_income", "household_per_capita_income", "per_capita_income", "ipcf", "ingreso_hogar", "renda_domiciliar", "renda_familiar"],
+    ephAliases: ["ipcf"],
+    friendlyLabel: "Household income",
+    keywords: ["household_income", "family_income", "per_capita", "ingreso_hogar", "renda_domiciliar", "renda_familiar"],
+    partials: ["household_income", "family_income", "per_capita_income", "ipcf", "ingreso_hogar", "renda_domiciliar"],
+  },
+  employment: {
+    aliases: ["employment", "employment_status", "labour_status", "labor_status", "work_status", "job_status", "empleo", "ocupado", "emprego", "estado"],
+    ephAliases: ["estado"],
+    friendlyLabel: "Employment status",
+    keywords: ["employment", "labour", "labor", "work", "job", "empleo", "emprego", "estado"],
+    partials: ["employment_status", "labour_status", "labor_status", "work_status", "job_status", "estado"],
+  },
+  occupation: {
+    aliases: ["occupation", "occupational_category", "occupation_category", "job_type", "ocupacion", "ocupação", "ocupacao", "cat_ocup"],
+    ephAliases: ["cat_ocup"],
+    friendlyLabel: "Occupation",
+    keywords: ["occupation", "ocupacion", "ocupacao", "ocupação", "job_type"],
+    partials: ["occupation", "occupational", "ocupacion", "ocupacao", "cat_ocup"],
+  },
+  education: {
+    aliases: ["education", "education_level", "educ", "schooling", "qualification", "educacion", "educación", "educacao", "educação", "nivel_ed"],
+    ephAliases: ["nivel_ed"],
+    friendlyLabel: "Education",
+    keywords: ["education", "educ", "school", "educacion", "educacao", "nivel"],
+    partials: ["education_level", "schooling", "qualification", "educacion", "educacao", "nivel_ed"],
+  },
+  region: {
+    aliases: ["region", "state", "province", "county", "district", "area", "location", "provincia", "regiao", "região", "uf", "estado", "aglomerado"],
+    ephAliases: ["aglomerado"],
+    friendlyLabel: "Region / geography",
+    keywords: ["region", "state", "province", "provincia", "regiao", "uf", "district", "area", "location", "aglomerado"],
+    partials: ["region", "province", "provincia", "regiao", "location", "aglomerado"],
+  },
+  householdSize: {
+    aliases: ["household_size", "hh_size", "family_size", "household_members", "tam_hogar", "tamanho_domicilio", "domicilio", "hogar"],
+    friendlyLabel: "Household size",
+    keywords: ["household", "family", "hogar", "domicilio", "domicílio"],
+    partials: ["household_size", "hh_size", "family_size", "household_members", "tam_hogar", "tamanho_domicilio"],
+  },
+  children: {
+    aliases: ["children", "num_children", "kids", "dependents", "hijos", "filhos", "menores", "dependientes", "dependentes"],
+    friendlyLabel: "Children / dependents",
+    keywords: ["children", "kids", "dependents", "hijos", "filhos", "dependientes", "dependentes"],
+    partials: ["num_children", "children", "dependents", "hijos", "filhos"],
+  },
+  year: {
+    aliases: ["year", "survey_year", "ano", "anio", "año", "ano4"],
+    ephAliases: ["ano4"],
+    friendlyLabel: "Year",
+    keywords: ["year", "ano", "anio"],
+    partials: ["survey_year", "year", "ano4"],
+  },
+  quarter: {
+    aliases: ["quarter", "trimester", "trimestre", "period", "periodo"],
+    ephAliases: ["trimestre"],
+    friendlyLabel: "Quarter / period",
+    keywords: ["quarter", "trimester", "trimestre", "period", "periodo"],
+    partials: ["quarter", "trimester", "trimestre", "period"],
+  },
+  householdId: {
+    aliases: ["household_id", "hh_id", "household_sample_id", "sample_id", "codusu", "nro_hogar", "id_hogar", "id_domicilio"],
+    ephAliases: ["nro_hogar", "codusu"],
+    friendlyLabel: "Household ID",
+    keywords: ["household_id", "hh_id", "sample_id", "codusu", "hogar", "domicilio"],
+    partials: ["household_id", "hh_id", "sample_id", "codusu", "nro_hogar", "id_hogar"],
+  },
+  personId: {
+    aliases: ["person_id", "individual_id", "respondent_id", "component", "componente", "id_persona", "id_individuo"],
+    ephAliases: ["componente"],
+    friendlyLabel: "Person ID",
+    keywords: ["person_id", "individual_id", "respondent_id", "persona", "individuo", "component"],
+    partials: ["person_id", "individual_id", "respondent_id", "componente", "component"],
+  },
+};
 
 function cleanCell(value: unknown): CellValue {
   if (value === undefined || value === null || value === "") {
@@ -176,28 +306,75 @@ function getDataQuality(rows: DataRow[], columns: string[], profiles: ColumnProf
 }
 
 function normalizeColumnName(column: string) {
-  return column.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  return column
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
-function findColumn(columns: string[], patterns: string[]) {
-  return (
-    columns.find((column) => {
-      const normalized = normalizeColumnName(column);
-      return patterns.some((pattern) => normalized === pattern || normalized.includes(pattern));
-    }) ?? ""
+function scoreColumnForConcept(column: string, concept: SurveyVariableKey): SurveyDetection | null {
+  const definition = SURVEY_CONCEPTS[concept];
+  const normalized = normalizeColumnName(column);
+  const aliases = definition.aliases.map(normalizeColumnName);
+  const ephAliases = (definition.ephAliases ?? []).map(normalizeColumnName);
+  const partials = definition.partials.map(normalizeColumnName);
+  const keywords = definition.keywords.map(normalizeColumnName);
+
+  if (ephAliases.includes(normalized)) {
+    return { column, concept, confidence: 100, friendlyLabel: definition.friendlyLabel, method: "EPH alias" };
+  }
+
+  if (aliases.includes(normalized)) {
+    return { column, concept, confidence: 96, friendlyLabel: definition.friendlyLabel, method: "Exact alias" };
+  }
+
+  if (partials.some((partial) => normalized.includes(partial) || partial.includes(normalized))) {
+    return { column, concept, confidence: 84, friendlyLabel: definition.friendlyLabel, method: "Partial string match" };
+  }
+
+  if (keywords.some((keyword) => normalized.split("_").includes(keyword) || normalized.includes(`_${keyword}_`) || normalized.startsWith(`${keyword}_`) || normalized.endsWith(`_${keyword}`))) {
+    return { column, concept, confidence: 72, friendlyLabel: definition.friendlyLabel, method: "Survey keyword" };
+  }
+
+  return null;
+}
+
+function detectSurveyVariables(columns: string[]) {
+  return (Object.keys(SURVEY_CONCEPTS) as SurveyVariableKey[]).reduce(
+    (detections, concept) => {
+      const candidates = columns
+        .map((column) => scoreColumnForConcept(column, concept))
+        .filter((detection): detection is SurveyDetection => detection !== null)
+        .sort((a, b) => b.confidence - a.confidence);
+
+      detections[concept] =
+        candidates[0] ?? {
+          column: "",
+          concept,
+          confidence: 0,
+          friendlyLabel: SURVEY_CONCEPTS[concept].friendlyLabel,
+          method: "Not detected",
+        };
+
+      return detections;
+    },
+    {} as Record<SurveyVariableKey, SurveyDetection>,
   );
 }
 
-function getSurveyVariables(columns: string[]) {
+function getSurveyVariables(detections: Record<SurveyVariableKey, SurveyDetection>) {
   return {
-    age: findColumn(columns, ["age", "respondent_age", "edad", "idade"]),
-    children: findColumn(columns, ["children", "num_children", "kids", "dependents"]),
-    education: findColumn(columns, ["education", "educ", "schooling", "qualification"]),
-    employment: findColumn(columns, ["employment", "employment_status", "labour", "labor", "work_status", "occupation", "job_status"]),
-    household: findColumn(columns, ["household_size", "hh_size", "household", "family_size"]),
-    income: findColumn(columns, ["income", "earnings", "wage", "salary", "pay", "revenue"]),
-    region: findColumn(columns, ["region", "state", "province", "county", "district", "area", "location"]),
-    sex: findColumn(columns, ["sex", "gender", "male_female"]),
+    age: detections.age.column,
+    children: detections.children.column,
+    education: detections.education.column,
+    employment: detections.employment.column,
+    household: detections.householdSize.column,
+    income: detections.individualIncome.column || detections.householdIncome.column,
+    occupation: detections.occupation.column,
+    region: detections.region.column,
+    sex: detections.sex.column,
   };
 }
 
@@ -639,7 +816,9 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
 
   const columns = useMemo(() => getColumns(rows), [rows]);
-  const surveyVariables = useMemo(() => getSurveyVariables(columns), [columns]);
+  const surveyDetections = useMemo(() => detectSurveyVariables(columns), [columns]);
+  const surveyDetectionList = useMemo(() => (Object.keys(SURVEY_CONCEPTS) as SurveyVariableKey[]).map((concept) => surveyDetections[concept]), [surveyDetections]);
+  const surveyVariables = useMemo(() => getSurveyVariables(surveyDetections), [surveyDetections]);
   const numericColumns = useMemo(() => columns.filter((column) => isNumericColumn(rows, column)), [columns, rows]);
   const textColumns = useMemo(() => columns.filter((column) => !numericColumns.includes(column)), [columns, numericColumns]);
   const columnProfiles = useMemo(() => getColumnProfiles(rows, columns), [columns, rows]);
@@ -959,6 +1138,34 @@ export default function Home() {
               onToggle={() => setFiltersOpen((current) => !current)}
               onUpdate={updateFilter}
             />
+
+            <GlassPanel className="p-4 sm:p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Detected survey variables</h2>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Semantic detection combines EPH aliases, exact aliases, international survey names, partial matching, and keyword matching.
+                  </p>
+                </div>
+                <p className="text-sm font-semibold text-blue-700">
+                  {surveyDetectionList.filter((detection) => detection.column).length} / {surveyDetectionList.length} concepts detected
+                </p>
+              </div>
+              <div className="detected-grid mt-5">
+                {surveyDetectionList.map((detection) => (
+                  <div className={`detected-variable ${detection.column ? "" : "detected-variable-empty"}`} key={detection.concept}>
+                    <div>
+                      <span>{detection.friendlyLabel}</span>
+                      <strong>{detection.column || "Not detected"}</strong>
+                    </div>
+                    <div className="text-right">
+                      <span>{detection.method}</span>
+                      <strong>{detection.confidence}%</strong>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </GlassPanel>
 
             {filteredRows.length === 0 && (
               <EmptyState
@@ -1358,7 +1565,7 @@ export default function Home() {
                     </div>
                     <div className="metric-tile">
                       <span>Detected survey vars</span>
-                      <strong>{Object.values(surveyVariables).filter(Boolean).length}</strong>
+                      <strong>{surveyDetectionList.filter((detection) => detection.column).length}</strong>
                     </div>
                   </div>
                 </GlassPanel>
