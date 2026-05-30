@@ -9,7 +9,7 @@ type CellValue = string | number | null;
 type DataRow = Record<string, CellValue>;
 type FilterState = Record<string, { query: string; min: string; max: string }>;
 type SortState = { column: string; direction: "asc" | "desc" } | null;
-type TabKey = "overview" | "population" | "income" | "labour" | "insights" | "quality" | "visualization" | "preview" | "export";
+type TabKey = "report" | "overview" | "population" | "income" | "labour" | "insights" | "quality" | "visualization" | "preview" | "export";
 type ChartType = "scatter" | "bar" | "line" | "histogram";
 type PlotTrace = Record<string, unknown>;
 type SurveyVariableKey =
@@ -38,7 +38,9 @@ type ColumnProfile = {
   average: number | null;
   column: string;
   completeness: number;
+  frequencies: { count: number; label: string; percent: number }[];
   max: number | null;
+  median: number | null;
   min: number | null;
   missing: number;
   numericCount: number;
@@ -53,6 +55,7 @@ const Plot = dynamic(() => import("react-plotly.js"), {
 });
 
 const TABS: { key: TabKey; label: string }[] = [
+  { key: "report", label: "Dataset Report" },
   { key: "overview", label: "Overview" },
   { key: "population", label: "Population" },
   { key: "income", label: "Income" },
@@ -257,6 +260,22 @@ function getColumnProfiles(rows: DataRow[], columns: string[]): ColumnProfile[] 
     const values = rows.map((row) => row[column] ?? null);
     const present = values.filter((value) => value !== null);
     const numericValues = present.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const sortedNumeric = [...numericValues].sort((a, b) => a - b);
+    const mid = Math.floor(sortedNumeric.length / 2);
+    const median =
+      sortedNumeric.length === 0
+        ? null
+        : sortedNumeric.length % 2
+          ? sortedNumeric[mid]
+          : (sortedNumeric[mid - 1] + sortedNumeric[mid]) / 2;
+    const counts = present.reduce((map, value) => {
+      const key = String(value);
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>());
+    const frequencies = Array.from(counts.entries())
+      .map(([label, count]) => ({ count, label, percent: present.length ? (count / present.length) * 100 : 0 }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
     const textCount = present.filter((value) => typeof value === "string").length;
     const type =
       present.length === 0
@@ -271,7 +290,9 @@ function getColumnProfiles(rows: DataRow[], columns: string[]): ColumnProfile[] 
       average: numericValues.length ? mean(numericValues) : null,
       column,
       completeness: rows.length ? (present.length / rows.length) * 100 : 0,
+      frequencies,
       max: numericValues.length ? Math.max(...numericValues) : null,
+      median,
       min: numericValues.length ? Math.min(...numericValues) : null,
       missing: values.length - present.length,
       numericCount: numericValues.length,
@@ -643,6 +664,44 @@ function MiniBars({ values }: { values: number[] }) {
   );
 }
 
+function TinyDistribution({ profile }: { profile: ColumnProfile }) {
+  if (profile.type === "numeric") {
+    const bars = profile.frequencies
+      .map((item) => ({ ...item, numericLabel: Number(item.label) }))
+      .filter((item) => Number.isFinite(item.numericLabel))
+      .sort((a, b) => a.numericLabel - b.numericLabel)
+      .slice(0, 32);
+    const maxCount = Math.max(1, ...bars.map((item) => item.count));
+
+    return (
+      <div className="variable-mini-bars">
+        {bars.map((item) => (
+          <i
+            key={item.label}
+            style={{ height: `${18 + (item.count / maxCount) * 82}%` }}
+            title={`${item.label}: ${item.count.toLocaleString()}`}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="tiny-frequency">
+      {profile.frequencies.slice(0, 5).map((item) => (
+        <div key={item.label}>
+          <span title={item.label}>{item.label}</span>
+          <div>
+            <i style={{ width: `${Math.max(4, item.percent)}%` }} />
+          </div>
+          <em>{item.count}</em>
+        </div>
+      ))}
+      {profile.frequencies.length === 0 && <p>No values</p>}
+    </div>
+  );
+}
+
 function getGroupedRows(rows: DataRow[], groupColumn: string) {
   if (!groupColumn) {
     return [["All rows", rows]] as [string, DataRow[]][];
@@ -806,7 +865,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [filters, setFilters] = useState<FilterState>({});
   const [sort, setSort] = useState<SortState>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [activeTab, setActiveTab] = useState<TabKey>("report");
   const [chartType, setChartType] = useState<ChartType>("scatter");
   const [globalSearch, setGlobalSearch] = useState("");
   const [xColumn, setXColumn] = useState("");
@@ -898,6 +957,63 @@ export default function Home() {
     () => columnProfiles.filter((profile) => profile.missing > 0).sort((a, b) => b.missing - a.missing),
     [columnProfiles],
   );
+  const typeCounts = useMemo(
+    () =>
+      columnProfiles.reduce(
+        (counts, profile) => ({ ...counts, [profile.type]: counts[profile.type] + 1 }),
+        { empty: 0, mixed: 0, numeric: 0, text: 0 },
+      ),
+    [columnProfiles],
+  );
+  const suspiciousColumns = useMemo(
+    () =>
+      columnProfiles
+        .map((profile) => {
+          const reasons = [
+            profile.missing > 0 && profile.completeness < 90 ? `${profile.missing.toLocaleString()} missing values` : "",
+            profile.unique <= 1 && rows.length > 1 ? "only one observed value" : "",
+            profile.type === "mixed" ? "mixed numeric/text values" : "",
+            profile.unique === rows.length && rows.length > 8 ? "unique in every row; likely an identifier" : "",
+            profile.column === surveyVariables.age && profile.min !== null && profile.min < 0 ? "age contains negative values" : "",
+            profile.column === surveyVariables.age && profile.max !== null && profile.max > 120 ? "age contains values above 120" : "",
+            profile.column === surveyVariables.income && profile.min !== null && profile.min < 0 ? "income contains negative values" : "",
+            profile.column === surveyVariables.household && profile.min !== null && profile.min < 1 ? "household size below 1" : "",
+            profile.column === surveyVariables.children && profile.min !== null && profile.min < 0 ? "children/dependents contains negative values" : "",
+          ].filter(Boolean);
+
+          return { ...profile, reasons };
+        })
+        .filter((profile) => profile.reasons.length > 0)
+        .sort((a, b) => a.completeness - b.completeness)
+        .slice(0, 8),
+    [columnProfiles, rows.length, surveyVariables],
+  );
+  const recommendedAnalyses = useMemo(() => {
+    const recommendations = [
+      surveyVariables.age || surveyVariables.sex || surveyVariables.household
+        ? "Start with the Population tab to inspect age structure, sex/gender composition, household size, and geography."
+        : "",
+      surveyVariables.income
+        ? "Use the Income tab to compare income distribution and group averages. Check missingness before interpreting inequality."
+        : "",
+      surveyVariables.employment
+        ? "Use the Labour tab to describe employment status and relate labour-market groups to education or income."
+        : "",
+      surveyDetections.year.column || surveyDetections.quarter.column
+        ? "If this file combines periods, compare results by year or quarter before pooling observations."
+        : "",
+      dataQuality.completeness < 95
+        ? "Review columns with missing values in Data Quality before estimating relationships or reporting totals."
+        : "",
+      dataQuality.duplicateRows > 0
+        ? "Investigate duplicate rows before analysis; duplicates may inflate subgroup counts."
+        : "",
+    ].filter(Boolean);
+
+    return recommendations.length
+      ? recommendations
+      : ["Inspect Data Quality first, then use Visualization to choose relevant numeric and categorical variables for exploratory analysis."];
+  }, [dataQuality.completeness, dataQuality.duplicateRows, surveyDetections.quarter.column, surveyDetections.year.column, surveyVariables]);
 
   const selectedX = xColumn || numericColumns[0] || "";
   const selectedY = yColumn || numericColumns.find((column) => column !== selectedX) || numericColumns[0] || "";
@@ -963,7 +1079,7 @@ export default function Home() {
         throw new Error("Upload a CSV, XLS, or XLSX file.");
       }
 
-      setActiveTab("overview");
+      setActiveTab("report");
       setFilters({});
       setFiltersOpen(false);
       setGlobalSearch("");
@@ -994,6 +1110,7 @@ export default function Home() {
   function loadSample() {
     setRows(SAMPLE_ROWS);
     setFileName("sample-demography.csv");
+    setActiveTab("report");
     setFilters({});
     setFiltersOpen(false);
     setGlobalSearch("");
@@ -1177,6 +1294,180 @@ export default function Home() {
                   </button>
                 }
               />
+            )}
+
+            {activeTab === "report" && (
+              <div className="space-y-5">
+                <GlassPanel className="p-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-white">Dataset Report</h2>
+                      <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
+                        Understand the dataset before analysing it. This report summarizes structure, missingness, duplicates, detected survey variables, suspicious columns, and suggested next steps.
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
+                      {fileName || "Untitled dataset"}
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                    <div className="metric-tile">
+                      <span>Rows</span>
+                      <strong>{rows.length.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Columns</span>
+                      <strong>{columns.length.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Total cells</span>
+                      <strong>{dataQuality.totalCells.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Missing values</span>
+                      <strong>{dataQuality.missingValues.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Duplicate rows</span>
+                      <strong>{dataQuality.duplicateRows.toLocaleString()}</strong>
+                    </div>
+                    <div className="metric-tile">
+                      <span>Completeness</span>
+                      <strong>{dataQuality.completeness.toFixed(1)}%</strong>
+                    </div>
+                  </div>
+                  <div className="quality-bar mt-5">
+                    <div style={{ width: `${dataQuality.completeness}%` }} />
+                  </div>
+                </GlassPanel>
+
+                <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Variable type counts</h3>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="metric-tile">
+                        <span>Numeric</span>
+                        <strong>{typeCounts.numeric}</strong>
+                      </div>
+                      <div className="metric-tile">
+                        <span>Categorical</span>
+                        <strong>{typeCounts.text}</strong>
+                      </div>
+                      <div className="metric-tile">
+                        <span>Mixed</span>
+                        <strong>{typeCounts.mixed}</strong>
+                      </div>
+                      <div className="metric-tile">
+                        <span>Empty</span>
+                        <strong>{typeCounts.empty}</strong>
+                      </div>
+                    </div>
+                  </GlassPanel>
+
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Detected survey variables</h3>
+                    <div className="report-variable-list mt-4">
+                      {surveyDetectionList.map((detection) => (
+                        <div key={detection.concept}>
+                          <span>{detection.friendlyLabel}</span>
+                          <strong>{detection.column || "Not detected"}</strong>
+                          <em>{detection.confidence}% / {detection.method}</em>
+                        </div>
+                      ))}
+                    </div>
+                  </GlassPanel>
+                </div>
+
+                <GlassPanel className="p-5">
+                  <h3 className="text-lg font-semibold text-white">Variable profiles</h3>
+                  <p className="mt-1 text-sm text-slate-400">
+                    A compact profile for each variable, including completeness, unique values, numeric statistics, and mini distributions.
+                  </p>
+                  <div className="variable-profile-grid mt-5">
+                    {columnProfiles.map((profile) => (
+                      <div className="variable-profile" key={profile.column}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h4 title={profile.column}>{profile.column}</h4>
+                            <p>{profile.type} / {profile.unique.toLocaleString()} unique</p>
+                          </div>
+                          <span>{profile.completeness.toFixed(0)}%</span>
+                        </div>
+                        <div className="variable-profile-stats">
+                          <div>
+                            <span>Missing</span>
+                            <strong>{profile.missing.toLocaleString()}</strong>
+                          </div>
+                          <div>
+                            <span>Min</span>
+                            <strong>{formatValue(profile.min)}</strong>
+                          </div>
+                          <div>
+                            <span>Max</span>
+                            <strong>{formatValue(profile.max)}</strong>
+                          </div>
+                          <div>
+                            <span>Avg</span>
+                            <strong>{formatValue(profile.average)}</strong>
+                          </div>
+                          <div>
+                            <span>Median</span>
+                            <strong>{formatValue(profile.median)}</strong>
+                          </div>
+                        </div>
+                        <TinyDistribution profile={profile} />
+                      </div>
+                    ))}
+                  </div>
+                </GlassPanel>
+
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Columns with most missing values</h3>
+                    <div className="mt-4 space-y-3">
+                      {missingProfiles.length ? (
+                        missingProfiles.slice(0, 8).map((profile) => (
+                          <InsightCard
+                            detail={`${profile.missing.toLocaleString()} missing values; ${profile.completeness.toFixed(1)}% complete.`}
+                            key={profile.column}
+                            label={profile.column}
+                            tone={profile.completeness < 90 ? "warning" : "default"}
+                          />
+                        ))
+                      ) : (
+                        <InsightCard detail="No missing values detected across loaded cells." label="Missingness" />
+                      )}
+                    </div>
+                  </GlassPanel>
+
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Suspicious columns</h3>
+                    <div className="mt-4 space-y-3">
+                      {suspiciousColumns.length ? (
+                        suspiciousColumns.map((profile) => (
+                          <InsightCard
+                            detail={profile.reasons.join("; ")}
+                            key={profile.column}
+                            label={profile.column}
+                            tone="warning"
+                          />
+                        ))
+                      ) : (
+                        <InsightCard detail="No obvious structural issues detected from missingness, uniqueness, or mixed values." label="Column checks" />
+                      )}
+                    </div>
+                  </GlassPanel>
+                </div>
+
+                <GlassPanel className="p-5">
+                  <h3 className="text-lg font-semibold text-white">Recommended analyses</h3>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {recommendedAnalyses.map((recommendation) => (
+                      <InsightCard detail={recommendation} key={recommendation} label="Next step" />
+                    ))}
+                  </div>
+                </GlassPanel>
+              </div>
             )}
 
             {activeTab === "overview" && (
