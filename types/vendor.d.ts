@@ -25,3 +25,19 @@ declare module "papaparse" {
 
   export default Papa;
 }
+
+declare module "react-plotly.js" {
+  import type { ComponentType } from "react";
+
+  type PlotProps = {
+    config?: Record<string, unknown>;
+    data?: Array<Record<string, unknown>>;
+    layout?: Record<string, unknown>;
+    style?: Record<string, string | number>;
+    useResizeHandler?: boolean;
+  };
+
+  const Plot: ComponentType<PlotProps>;
+
+  export default Plot;
+}
