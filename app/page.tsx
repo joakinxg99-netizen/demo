@@ -3472,65 +3472,68 @@ export default function Home() {
 
             {activeTab === "export" && (
               <div className="space-y-5">
-                <GlassPanel className="p-5">
-                  <div className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
+                <GlassPanel className="export-report-hero p-6">
+                  <div className="grid gap-6 lg:grid-cols-[1fr_0.75fr] lg:items-start">
                     <div>
-                      <h2 className="text-xl font-semibold text-white">Export filtered data</h2>
-                      <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                        Export uses the current filters and sort order. No backend is involved; the CSV is generated directly in this browser session.
+                      <p className="report-section-label">Flagship deliverable</p>
+                      <h2 className="text-2xl font-semibold text-white">Export Research Report</h2>
+                      <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
+                        Turn the current filtered dataset into a research-ready report with narrative findings, quality checks, detected survey variables, and analysis charts.
                       </p>
-                      <div className="mt-4 max-w-2xl">
-                        <InsightCard
-                          detail={`Export will include ${filteredRows.length.toLocaleString()} records and ${columns.length.toLocaleString()} variables after the current search, filters, and sort are applied.`}
-                          label="Interpretation"
-                        />
-                      </div>
-                      <div className="mt-6 flex flex-wrap gap-3">
-                        <button className="primary-button" onClick={exportCsv} type="button">
-                          Download filtered CSV
+                      <div className="report-export-actions mt-6">
+                        <button className="primary-button report-export-action" onClick={downloadReportPdf} type="button">
+                          Download PDF
                         </button>
-                        <button className="quiet-button" onClick={() => setActiveTab("preview")} type="button">
-                          Inspect preview
+                        <button className="quiet-button report-export-action" onClick={downloadReportHtml} type="button">
+                          Download HTML
+                        </button>
+                        <button className="quiet-button report-export-action" onClick={downloadVariableDictionary} type="button">
+                          Download Variable Dictionary
+                        </button>
+                        <button className="quiet-button report-export-action" onClick={copyExecutiveSummary} type="button">
+                          Copy Executive Summary
                         </button>
                       </div>
+                      <p className="mt-3 text-xs text-slate-500">PDF export opens a print-ready report; choose “Save as PDF” in the browser print dialog.</p>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                      <div className="metric-tile">
-                        <span>Rows exported</span>
-                        <strong>{filteredRows.length.toLocaleString()}</strong>
-                      </div>
-                      <div className="metric-tile">
-                        <span>Columns</span>
-                        <strong>{columns.length}</strong>
-                      </div>
-                      <div className="metric-tile">
-                        <span>Source</span>
-                        <strong className="truncate text-base">{fileName || "Untitled"}</strong>
-                      </div>
+                    <div className="report-includes-card">
+                      <span>This report includes</span>
+                      <ul className="report-includes-list">
+                        {[
+                          "Executive Summary",
+                          "Key Findings",
+                          "Dataset Overview",
+                          "Data Quality Assessment",
+                          "Population Analysis",
+                          "Income Analysis",
+                          "Labour Analysis",
+                          "Visualizations",
+                          "Variable Dictionary",
+                        ].map((item) => (
+                          <li key={item}>✓ {item}</li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
                 </GlassPanel>
 
-                <GlassPanel className="p-5">
-                  <h2 className="text-xl font-semibold text-white">Export Research Report</h2>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                    Export a research-ready summary with executive summary, overview, detected variables, data quality, population, income, labour, and key insights.
-                  </p>
-                  <div className="report-export-actions mt-5">
-                    <button className="quiet-button report-export-action" onClick={copyExecutiveSummary} type="button">
-                      Copy Executive Summary
-                    </button>
-                    <button className="quiet-button report-export-action" onClick={downloadReportPdf} type="button">
-                      Download Report PDF
-                    </button>
-                    <button className="quiet-button report-export-action" onClick={downloadReportHtml} type="button">
-                      Download Report HTML
-                    </button>
-                    <button className="quiet-button report-export-action" onClick={downloadVariableDictionary} type="button">
-                      Download Variable Dictionary
-                    </button>
+                <GlassPanel className="export-dataset-utility p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="min-w-0">
+                      <h2 className="text-lg font-semibold text-white">Export Dataset</h2>
+                      <p className="mt-1 truncate text-sm text-slate-500">
+                        {filteredRows.length.toLocaleString()} rows · {columns.length.toLocaleString()} columns · {fileName || "Untitled dataset"}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button className="quiet-button export-utility-action" onClick={exportCsv} type="button">
+                        Download CSV
+                      </button>
+                      <button className="quiet-button export-utility-action" onClick={() => setActiveTab("preview")} type="button">
+                        Preview
+                      </button>
+                    </div>
                   </div>
-                  <p className="mt-3 text-xs text-slate-500">PDF export opens a print-ready report; choose “Save as PDF” in the browser print dialog.</p>
                 </GlassPanel>
               </div>
             )}
