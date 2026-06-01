@@ -805,6 +805,37 @@ select:disabled {
     rgba(248, 250, 252, 0.96);
 }
 
+.report-hero-meta {
+  min-width: min(100%, 18rem);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  padding: 0.75rem 0.9rem;
+}
+
+.report-hero-meta span,
+.report-hero-meta strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-hero-meta span {
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.report-hero-meta strong {
+  margin-top: 0.25rem;
+  color: #172554;
+  font-size: 0.9rem;
+}
+
 .report-kicker,
 .report-section-label {
   color: #2563eb;
@@ -833,6 +864,44 @@ select:disabled {
   font-weight: 800;
 }
 
+.research-narrative-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+}
+
+.research-narrative-grid article {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 0.95rem;
+}
+
+.research-narrative-grid strong {
+  display: block;
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.research-narrative-grid p {
+  margin-top: 0.45rem;
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.report-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.report-export-action {
+  min-height: 2.35rem;
+  padding: 0.58rem 0.82rem;
+  font-size: 0.82rem;
+}
+
 .suggested-grid {
   display: grid;
   gap: 0.75rem;
@@ -857,6 +926,35 @@ select:disabled {
   border-color: #93c5fd;
   background: #eff6ff;
   transform: translateY(-1px);
+}
+
+.key-findings-list {
+  display: grid;
+  gap: 0.65rem;
+  list-style: none;
+  padding: 0;
+}
+
+.key-findings-list li {
+  position: relative;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #1e293b;
+  font-size: 0.94rem;
+  line-height: 1.55;
+  padding: 0.78rem 0.9rem 0.78rem 2rem;
+}
+
+.key-findings-list li::before {
+  position: absolute;
+  left: 0.85rem;
+  top: 0.95rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #2563eb;
+  content: "";
 }
 
 .population-pyramid {
@@ -1113,6 +1211,11 @@ select:disabled {
 
   .dictionary-table b {
     text-align: left;
+  }
+
+  .report-export-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .tab-button {

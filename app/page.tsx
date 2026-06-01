@@ -100,6 +100,10 @@ const ANALYTICAL_CONCEPTS = new Set<SurveyVariableKey>([
   "quarter",
 ]);
 
+function getConceptCategory(concept: SurveyVariableKey) {
+  return REPORT_DETECTION_GROUPS.find((group) => group.concepts.includes(concept))?.title ?? "Other";
+}
+
 const SAMPLE_ROWS: DataRow[] = [
   { respondent_id: 1, region: "North", age: 22, sex: "Female", education: "University", employment_status: "Student", monthly_income: 950, household_size: 3, children: 0, housing_tenure: "Rent" },
   { respondent_id: 2, region: "North", age: 41, sex: "Male", education: "Secondary", employment_status: "Employed", monthly_income: 3200, household_size: 4, children: 2, housing_tenure: "Own" },
@@ -1154,6 +1158,7 @@ export default function Home() {
       surveyDetectionList
         .filter((detection) => detection.column)
         .map((detection) => ({
+          category: getConceptCategory(detection.concept),
           column: detection.column,
           concept: detection.concept,
           confidence: detection.confidence,
@@ -1161,6 +1166,10 @@ export default function Home() {
           method: detection.method,
         })),
     [surveyDetectionList],
+  );
+  const columnFriendlyLabels = useMemo(
+    () => new Map(variableDictionary.map((item) => [item.column, item.friendlyName])),
+    [variableDictionary],
   );
   const detectedAnalyticalColumns = useMemo(
     () =>
@@ -1180,19 +1189,11 @@ export default function Home() {
       return "Argentina EPH-style social survey";
     }
 
-    if (hasPopulation && hasEconomics) {
-      return "Demographic and labour-market survey";
+    if (hasPopulation || hasEconomics) {
+      return "Generic social survey";
     }
 
-    if (hasEconomics) {
-      return "Economic or labour-market survey";
-    }
-
-    if (hasPopulation) {
-      return "Demographic survey";
-    }
-
-    return "General social dataset";
+    return "Generic tabular dataset";
   }, [surveyDetectionList, surveyVariables]);
   const typeCounts = useMemo(
     () =>
@@ -1440,6 +1441,107 @@ export default function Home() {
 
     return `${missingText} ${duplicateText}`;
   }, [dataQuality.duplicateRows, missingProfiles]);
+  const economicInsightsNarrative = useMemo(() => {
+    if (correlations[0]) {
+      const left = columnFriendlyLabels.get(correlations[0].left) ?? correlations[0].left;
+      const right = columnFriendlyLabels.get(correlations[0].right) ?? correlations[0].right;
+      return `The strongest numeric relationship in the filtered data is between ${left} and ${right} (r = ${correlations[0].value.toFixed(2)}). Treat this as an exploratory signal, not evidence of causality.`;
+    }
+
+    if (incomeBySex[0]) {
+      return `Group-level economic comparison is available. The highest observed average income by sex/gender is ${incomeBySex[0].label}, at ${formatLargeNumber(incomeBySex[0].average)}.`;
+    }
+
+    if (regionDistribution[0]) {
+      return `Regional comparison can help show whether records are concentrated geographically. The largest observed region is ${regionDistribution[0].label}, representing ${regionDistribution[0].percent.toFixed(0)}% of analysed records.`;
+    }
+
+    return "Economic insight is limited until income, region, or at least two numeric variables are available in the filtered data.";
+  }, [columnFriendlyLabels, correlations, incomeBySex, regionDistribution]);
+  const researchNarratives = useMemo(
+    () => [
+      { title: "Population", detail: populationInterpretation },
+      { title: "Income", detail: incomeInterpretation },
+      { title: "Labour", detail: labourInterpretation },
+      { title: "Data Quality", detail: dataQualityInterpretation },
+      { title: "Economic Insights", detail: economicInsightsNarrative },
+    ],
+    [dataQualityInterpretation, economicInsightsNarrative, incomeInterpretation, labourInterpretation, populationInterpretation],
+  );
+  const keyFindings = useMemo(() => {
+    if (!rows.length) {
+      return ["No major findings detected yet. Load a richer dataset or review the visualization sections."];
+    }
+
+    const findings: string[] = [
+      `This ${detectedDatasetType.toLowerCase()} contains ${filteredRows.length.toLocaleString()} analysed observation${filteredRows.length === 1 ? "" : "s"} and ${columns.length.toLocaleString()} variable${columns.length === 1 ? "" : "s"}.`,
+      `Completeness is ${dataQuality.completeness.toFixed(1)}%, with ${dataQuality.missingValues.toLocaleString()} missing value${dataQuality.missingValues === 1 ? "" : "s"}.`,
+    ];
+    const detectedConcepts = variableDictionary.map((item) => item.friendlyName).slice(0, 5);
+    const criticalIssues = dataQualityIssues.filter((issue) => issue.severity === "critical");
+    const warningIssues = dataQualityIssues.filter((issue) => issue.severity === "warning");
+    const informationIssues = dataQualityIssues.filter((issue) => issue.severity === "information");
+
+    if (criticalIssues.length) {
+      findings.push(`Critical data quality issues were detected: ${criticalIssues.slice(0, 3).map((issue) => `${issue.title.toLowerCase()} in ${columnFriendlyLabels.get(issue.column) ?? issue.column}`).join(", ")}.`);
+    }
+
+    if (!criticalIssues.length && (warningIssues.length || informationIssues.length)) {
+      const parts = [
+        warningIssues.length ? `${warningIssues.length.toLocaleString()} warning${warningIssues.length === 1 ? "" : "s"}` : "",
+        informationIssues.length ? `${informationIssues.length.toLocaleString()} information note${informationIssues.length === 1 ? "" : "s"}` : "",
+      ].filter(Boolean);
+      findings.push(`Data quality review found ${parts.join(" and ")}.`);
+    }
+
+    if (dataQuality.duplicateRows > 0) {
+      findings.push(`${dataQuality.duplicateRows.toLocaleString()} duplicate row${dataQuality.duplicateRows === 1 ? " was" : "s were"} found.`);
+    }
+
+    if (detectedConcepts.length) {
+      findings.push(`${variableDictionary.length.toLocaleString()} survey concept${variableDictionary.length === 1 ? " was" : "s were"} detected, including ${detectedConcepts.join(", ")}.`);
+    }
+
+    if (ageSummary?.median !== null && ageSummary?.median !== undefined) {
+      findings.push(`Median age is ${formatLargeNumber(ageSummary.median)}.`);
+    }
+
+    if (incomeSummary?.median !== null && incomeSummary?.median !== undefined) {
+      findings.push(`Median income is ${formatLargeNumber(incomeSummary.median)}.`);
+    }
+
+    if (employmentDistribution[0]) {
+      findings.push(`Employment is concentrated in ${employmentDistribution[0].label}, representing ${employmentDistribution[0].percent.toFixed(0)}% of analysed records.`);
+    }
+
+    if (correlations[0]) {
+      const left = columnFriendlyLabels.get(correlations[0].left) ?? correlations[0].left;
+      const right = columnFriendlyLabels.get(correlations[0].right) ?? correlations[0].right;
+      findings.push(`The strongest numeric relationship is between ${left} and ${right} (r = ${correlations[0].value.toFixed(2)}).`);
+    }
+
+    if (criticalIssues.length || warningIssues.length || dataQuality.duplicateRows > 0) {
+      findings.push("Data quality issues should be addressed before formal analysis.");
+    }
+
+    const uniqueFindings = Array.from(new Set(findings));
+    return uniqueFindings.slice(0, 8);
+  }, [
+    ageSummary,
+    columnFriendlyLabels,
+    columns.length,
+    correlations,
+    dataQuality.completeness,
+    dataQuality.duplicateRows,
+    dataQuality.missingValues,
+    dataQualityIssues,
+    detectedDatasetType,
+    employmentDistribution,
+    filteredRows.length,
+    incomeSummary,
+    rows.length,
+    variableDictionary,
+  ]);
   const regression = useMemo(() => linearRegression(filteredRows, selectedX, selectedY), [filteredRows, selectedX, selectedY]);
   const plotData = useMemo(
     () =>
@@ -1865,15 +1967,15 @@ export default function Home() {
   }
 
   function downloadVariableDictionary() {
-    const rows = variableDictionary.map((item) => ({
-      column: item.column,
-      concept: item.concept,
-      confidence: item.confidence,
-      friendly_name: item.friendlyName,
-      method: item.method,
+    const dictionaryRows = variableDictionary.map((item) => ({
+      concept: item.category,
+      detection_confidence: `${item.confidence}%`,
+      detection_method: item.method,
+      friendly_label: item.friendlyName,
+      original_column: item.column,
     }));
 
-    downloadTextFile(toCsv(rows, ["column", "friendly_name", "concept", "confidence", "method"]), `variable-dictionary-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv;charset=utf-8");
+    downloadTextFile(toCsv(dictionaryRows, ["original_column", "friendly_label", "concept", "detection_confidence", "detection_method"]), `variable-dictionary-${new Date().toISOString().slice(0, 10)}.csv`, "text/csv;charset=utf-8");
   }
 
   function buildResearchReportHtml() {
@@ -2027,11 +2129,17 @@ export default function Home() {
       `Employment variable: ${surveyVariables.employment || "Not detected"}`,
       `Largest labour category: ${employmentDistribution[0]?.label ?? "-"}`,
     ];
+    const strongestCorrelationText = correlations[0]
+      ? `Strongest numeric relationship: ${columnFriendlyLabels.get(correlations[0].left) ?? correlations[0].left} x ${columnFriendlyLabels.get(correlations[0].right) ?? correlations[0].right} (${correlations[0].value.toFixed(3)})`
+      : "No numeric correlation available.";
     const insightItems = [
-      correlations[0] ? `Strongest numeric relationship: ${correlations[0].left} x ${correlations[0].right} (${correlations[0].value.toFixed(3)})` : "No numeric correlation available.",
+      strongestCorrelationText,
       incomeBySex[0] ? `Highest average income by sex/gender: ${incomeBySex[0].label} (${formatLargeNumber(incomeBySex[0].average)}).` : "Income by sex/gender is not available.",
       ...recommendedAnalyses.slice(0, 5),
     ];
+    const narrativeHtml = researchNarratives
+      .map((item) => `<article class="narrative-card"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p></article>`)
+      .join("");
     const list = (items: string[]) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
     const section = (title: string, content: string, chart = "") => `<section class="report-section"><h2>${escapeHtml(title)}</h2>${content}${chart ? `<div class="chart-wrap">${chart}</div>` : ""}</section>`;
 
@@ -2056,6 +2164,11 @@ export default function Home() {
     .cover-metric span { color: #64748b; display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .cover-metric strong { color: #0f172a; display: block; font-size: 15px; margin-top: 4px; overflow-wrap: anywhere; }
     .summary { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px; }
+    .type-badge { display: inline-flex; border: 1px solid #bfdbfe; border-radius: 999px; background: #eff6ff; color: #1e3a8a; font-size: 12px; font-weight: 700; margin-top: 8px; padding: 4px 10px; }
+    .narrative-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .narrative-card { border: 1px solid #dbe3ef; border-radius: 8px; background: #f8fafc; padding: 12px; }
+    .narrative-card strong { color: #0f172a; font-size: 13px; }
+    .narrative-card p { color: #475569; margin: 6px 0 0; }
     .report-section { break-inside: avoid; page-break-inside: avoid; }
     .chart-wrap { margin-top: 14px; overflow: hidden; }
     .report-chart { display: block; height: auto; max-width: 100%; width: 100%; }
@@ -2070,6 +2183,7 @@ export default function Home() {
       body { margin: 24px; }
       button { display: none; }
       .cover-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .narrative-grid { grid-template-columns: 1fr; }
       .report-section { break-inside: avoid; page-break-inside: avoid; }
       .report-chart, .chart-wrap, .quality-summary-chart { break-inside: avoid; page-break-inside: avoid; }
     }
@@ -2080,6 +2194,7 @@ export default function Home() {
   <div class="cover">
     <h1>Social Data Explorer Research Report</h1>
     <p><strong>Dataset:</strong> ${escapeHtml(fileName || "Untitled dataset")}</p>
+    <span class="type-badge">${escapeHtml(detectedDatasetType)}</span>
     <p>Generated with Social Data Explorer on ${escapeHtml(reportDate)} from the current filtered dataset.</p>
     <div class="cover-grid">
       <div class="cover-metric"><span>Rows</span><strong>${filteredRows.length.toLocaleString()}</strong></div>
@@ -2089,6 +2204,8 @@ export default function Home() {
     </div>
   </div>
   ${section("Executive Summary", `<p class="summary">${escapeHtml(executiveSummary)}</p>`)}
+  ${section("Key Findings", list(keyFindings))}
+  ${section("Research Narrative", `<div class="narrative-grid">${narrativeHtml}</div>`)}
   ${section("Dataset Overview", list(overviewItems))}
   ${section("Detected Variables", detectedItems.length ? list(detectedItems) : "<p>No survey variables were detected.</p>")}
   ${section("Data Quality", list(qualityItems), qualityChart())}
@@ -2308,8 +2425,9 @@ export default function Home() {
                         Understand the dataset before analysing it. Inspired by dfSummary(), adapted into a modern research dashboard for survey and demographic datasets.
                       </p>
                     </div>
-                    <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-900">
-                      {fileName || "Untitled dataset"}
+                    <div className="report-hero-meta">
+                      <span>{detectedDatasetType}</span>
+                      <strong>{fileName || "Untitled dataset"}</strong>
                     </div>
                   </div>
                 </GlassPanel>
@@ -2318,6 +2436,29 @@ export default function Home() {
                   <p className="report-section-label">Section 6</p>
                   <h3 className="text-lg font-semibold text-white">Executive Summary</h3>
                   <p className="mt-3 max-w-5xl text-base leading-7 text-slate-700">{executiveSummary}</p>
+                </GlassPanel>
+
+                <GlassPanel className="p-5">
+                  <p className="report-section-label">Research Assistant</p>
+                  <h3 className="text-lg font-semibold text-white">Key Findings</h3>
+                  <ul className="key-findings-list mt-4">
+                    {keyFindings.map((finding) => (
+                      <li key={finding}>{finding}</li>
+                    ))}
+                  </ul>
+                </GlassPanel>
+
+                <GlassPanel className="p-5">
+                  <p className="report-section-label">Interpretation Layer</p>
+                  <h3 className="text-lg font-semibold text-white">Research Narrative</h3>
+                  <div className="research-narrative-grid mt-4">
+                    {researchNarratives.map((item) => (
+                      <article key={item.title}>
+                        <strong>{item.title}</strong>
+                        <p>{item.detail}</p>
+                      </article>
+                    ))}
+                  </div>
                 </GlassPanel>
 
                 <GlassPanel className="p-5">
@@ -2358,6 +2499,10 @@ export default function Home() {
                     <div className="metric-tile">
                       <span>Completeness</span>
                       <strong>{dataQuality.completeness.toFixed(1)}%</strong>
+                    </div>
+                    <div className="metric-tile lg:col-span-2">
+                      <span>Detected type</span>
+                      <strong className="text-base leading-tight">{detectedDatasetType}</strong>
                     </div>
                     <div className="metric-tile">
                       <span>Numeric vars</span>
@@ -2447,7 +2592,7 @@ export default function Home() {
                         <div key={`${item.concept}-${item.column}`}>
                           <strong>{item.column}</strong>
                           <span>{item.friendlyName}</span>
-                          <em>{item.concept}</em>
+                          <em>{item.category}</em>
                           <b>{item.confidence}%</b>
                         </div>
                       ))
@@ -3371,17 +3516,17 @@ export default function Home() {
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
                     Export a research-ready summary with executive summary, overview, detected variables, data quality, population, income, labour, and key insights.
                   </p>
-                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <button className="quiet-button" onClick={copyExecutiveSummary} type="button">
+                  <div className="report-export-actions mt-5">
+                    <button className="quiet-button report-export-action" onClick={copyExecutiveSummary} type="button">
                       Copy Executive Summary
                     </button>
-                    <button className="quiet-button" onClick={downloadReportPdf} type="button">
+                    <button className="quiet-button report-export-action" onClick={downloadReportPdf} type="button">
                       Download Report PDF
                     </button>
-                    <button className="quiet-button" onClick={downloadReportHtml} type="button">
+                    <button className="quiet-button report-export-action" onClick={downloadReportHtml} type="button">
                       Download Report HTML
                     </button>
-                    <button className="quiet-button" onClick={downloadVariableDictionary} type="button">
+                    <button className="quiet-button report-export-action" onClick={downloadVariableDictionary} type="button">
                       Download Variable Dictionary
                     </button>
                   </div>
