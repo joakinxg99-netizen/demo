@@ -11,6 +11,14 @@ type FilterState = Record<string, { query: string; min: string; max: string }>;
 type SortState = { column: string; direction: "asc" | "desc" } | null;
 type TabKey = "report" | "overview" | "population" | "income" | "labour" | "insights" | "quality" | "visualization" | "preview" | "export";
 type ChartType = "scatter" | "bar" | "line" | "histogram";
+type VisualizationMode =
+  | "populationPyramid"
+  | "ageDistribution"
+  | "incomeDistribution"
+  | "employmentStructure"
+  | "educationProfile"
+  | "regionalComparison"
+  | "customRelationship";
 type PlotTrace = Record<string, unknown>;
 type SurveyVariableKey =
   | "age"
@@ -932,6 +940,7 @@ export default function Home() {
   const [sort, setSort] = useState<SortState>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("report");
   const [chartType, setChartType] = useState<ChartType>("scatter");
+  const [visualizationMode, setVisualizationMode] = useState<VisualizationMode | "auto">("auto");
   const [globalSearch, setGlobalSearch] = useState("");
   const [xColumn, setXColumn] = useState("");
   const [yColumn, setYColumn] = useState("");
@@ -1215,6 +1224,250 @@ export default function Home() {
       }),
     [chartType, filteredRows, groupColumn, regression, selectedX, selectedY],
   );
+  const customChartReady = numericColumns.length >= (chartType === "histogram" ? 1 : 2) && filteredRows.length > 0;
+  const customVisualizationInterpretation = useMemo(() => {
+    if (!customChartReady) {
+      return "Choose numeric variables to generate a custom relationship chart.";
+    }
+
+    if (chartType === "histogram") {
+      return `This distribution view helps assess ${selectedX}, including concentration, spread, and potential outliers.`;
+    }
+
+    if (chartType === "scatter" && regression) {
+      return `The relationship view compares ${selectedX} and ${selectedY}. The linear trend is ${regression.slope >= 0 ? "positive" : "negative"}, with R² of ${regression.r2.toFixed(2)}.`;
+    }
+
+    return `This custom view compares ${selectedX} and ${selectedY} across the current filtered dataset. Use grouping to check whether patterns differ by region, cohort, or social category.`;
+  }, [chartType, customChartReady, regression, selectedX, selectedY]);
+  const recommendedVisualizations = useMemo(
+    () => [
+      {
+        detail: "Best first view when both age and sex/gender are detected.",
+        enabled: Boolean(surveyVariables.age && surveyVariables.sex),
+        key: "populationPyramid" as VisualizationMode,
+        title: "Population Pyramid",
+      },
+      {
+        detail: "Understand whether the sample is young, older, or balanced across age bands.",
+        enabled: Boolean(surveyVariables.age),
+        key: "ageDistribution" as VisualizationMode,
+        title: "Age Distribution",
+      },
+      {
+        detail: "Inspect skew, spread, and outliers in detected income variables.",
+        enabled: Boolean(surveyVariables.income),
+        key: "incomeDistribution" as VisualizationMode,
+        title: "Income Distribution",
+      },
+      {
+        detail: "Summarize employment, unemployment, student, retired, or inactive groups.",
+        enabled: Boolean(surveyVariables.employment),
+        key: "employmentStructure" as VisualizationMode,
+        title: "Employment Structure",
+      },
+      {
+        detail: "Profile educational attainment categories in the survey population.",
+        enabled: Boolean(surveyVariables.education),
+        key: "educationProfile" as VisualizationMode,
+        title: "Education Profile",
+      },
+      {
+        detail: "Compare regions by income when available, otherwise by sample size.",
+        enabled: Boolean(surveyVariables.region),
+        key: "regionalComparison" as VisualizationMode,
+        title: "Regional Comparison",
+      },
+      {
+        detail: "Explore a custom relationship between selected numeric variables.",
+        enabled: customChartReady,
+        key: "customRelationship" as VisualizationMode,
+        title: "Custom Relationship",
+      },
+    ],
+    [customChartReady, surveyVariables.age, surveyVariables.education, surveyVariables.employment, surveyVariables.income, surveyVariables.region, surveyVariables.sex],
+  );
+  const activeVisualizationMode = useMemo(() => {
+    if (visualizationMode !== "auto") {
+      return visualizationMode;
+    }
+
+    return recommendedVisualizations.find((item) => item.enabled)?.key ?? "customRelationship";
+  }, [recommendedVisualizations, visualizationMode]);
+  const socialPlot = useMemo(() => {
+    const baseLayout = {
+      autosize: true,
+      font: { color: "#334155", family: "Arial, sans-serif" },
+      height: 460,
+      legend: { font: { color: "#475569" }, orientation: "h", x: 0, y: 1.14 },
+      margin: { b: 76, l: 72, r: 28, t: 44 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "#f8fafc",
+    };
+
+    if (activeVisualizationMode === "populationPyramid") {
+      const ready = pyramidRows.some((row) => row.left.count || row.right.count);
+      return {
+        data: [
+          {
+            marker: { color: "#60a5fa" },
+            name: pyramidRows[0]?.left.label ?? "Group A",
+            orientation: "h",
+            type: "bar",
+            x: pyramidRows.map((row) => -row.left.count),
+            y: pyramidRows.map((row) => row.band),
+          },
+          {
+            marker: { color: "#a78bfa" },
+            name: pyramidRows[0]?.right.label ?? "Group B",
+            orientation: "h",
+            type: "bar",
+            x: pyramidRows.map((row) => row.right.count),
+            y: pyramidRows.map((row) => row.band),
+          },
+        ] as PlotTrace[],
+        interpretation: ready ? populationInterpretation : "Detect age and sex/gender variables to build a population pyramid.",
+        layout: {
+          ...baseLayout,
+          barmode: "relative",
+          title: { font: { color: "#0f172a", size: 17 }, text: "Population Pyramid" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Respondents", zeroline: true, zerolinecolor: "#94a3b8" },
+          yaxis: { autorange: "reversed", gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Age band" },
+        },
+        nextAnalyses: ["Compare income by age band", "Review household structure by life stage", "Check whether age-sex cells are weighted or unweighted"],
+        ready,
+        title: "Population Pyramid",
+      };
+    }
+
+    if (activeVisualizationMode === "ageDistribution") {
+      return {
+        data: [{ marker: { color: "#2563eb" }, type: "bar", x: ageBands.map((item) => item.label), y: ageBands.map((item) => item.count) }] as PlotTrace[],
+        interpretation: ageBands.length ? populationInterpretation : "Detect an age variable to explain the age structure.",
+        layout: {
+          ...baseLayout,
+          title: { font: { color: "#0f172a", size: 17 }, text: "Age Distribution" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Age band" },
+          yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Respondents" },
+        },
+        nextAnalyses: ["Compare age bands by sex/gender", "Inspect employment status by age", "Review whether children or older adults are represented"],
+        ready: ageBands.length > 0,
+        title: "Age Distribution",
+      };
+    }
+
+    if (activeVisualizationMode === "incomeDistribution") {
+      const values = getNumericValues(filteredRows, surveyVariables.income);
+      return {
+        data: [{ marker: { color: "#0f766e" }, type: "histogram", x: values }] as PlotTrace[],
+        interpretation: values.length ? incomeInterpretation : "Detect an income variable to interpret the income distribution.",
+        layout: {
+          ...baseLayout,
+          bargap: 0.08,
+          title: { font: { color: "#0f172a", size: 17 }, text: "Income Distribution" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: surveyVariables.income || "Income" },
+          yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Respondents" },
+        },
+        nextAnalyses: ["Compare median income by sex/gender", "Review top and bottom income groups", "Check whether zero or missing income values need recoding"],
+        ready: values.length > 0,
+        title: "Income Distribution",
+      };
+    }
+
+    if (activeVisualizationMode === "employmentStructure") {
+      return {
+        data: [{ marker: { color: "#7c3aed" }, type: "bar", x: employmentDistribution.map((item) => item.label), y: employmentDistribution.map((item) => item.count) }] as PlotTrace[],
+        interpretation: employmentDistribution.length ? labourInterpretation : "Detect an employment-status variable to explain labour-market structure.",
+        layout: {
+          ...baseLayout,
+          title: { font: { color: "#0f172a", size: 17 }, text: "Employment Structure" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Employment status" },
+          yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Respondents" },
+        },
+        nextAnalyses: ["Compare income by labour status", "Explore education within employment groups", "Review inactive or missing labour categories"],
+        ready: employmentDistribution.length > 0,
+        title: "Employment Structure",
+      };
+    }
+
+    if (activeVisualizationMode === "educationProfile") {
+      return {
+        data: [{ marker: { color: "#b45309" }, type: "bar", x: educationDistribution.map((item) => item.label), y: educationDistribution.map((item) => item.count) }] as PlotTrace[],
+        interpretation: educationDistribution[0]
+          ? `Education is concentrated in ${educationDistribution[0].label}, representing ${educationDistribution[0].percent.toFixed(0)}% of analysed records.`
+          : "Detect an education variable to interpret attainment patterns.",
+        layout: {
+          ...baseLayout,
+          title: { font: { color: "#0f172a", size: 17 }, text: "Education Profile" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Education level" },
+          yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Respondents" },
+        },
+        nextAnalyses: ["Compare education by age cohort", "Relate education to income", "Check whether education codes need labels"],
+        ready: educationDistribution.length > 0,
+        title: "Education Profile",
+      };
+    }
+
+    if (activeVisualizationMode === "regionalComparison") {
+      const incomeByRegion = averageByGroup(filteredRows, surveyVariables.region, surveyVariables.income);
+      const regionalItems = incomeByRegion.length ? incomeByRegion.map((item) => ({ label: item.label, value: item.average })) : regionDistribution.map((item) => ({ label: item.label, value: item.count }));
+      return {
+        data: [{ marker: { color: "#475569" }, type: "bar", x: regionalItems.map((item) => item.label), y: regionalItems.map((item) => item.value) }] as PlotTrace[],
+        interpretation: regionalItems[0]
+          ? incomeByRegion.length
+            ? `${regionalItems[0].label} has the highest observed average income among detected regions.`
+            : `${regionalItems[0].label} is the largest regional group in the filtered dataset.`
+          : "Detect a region or geography variable to compare places.",
+        layout: {
+          ...baseLayout,
+          title: { font: { color: "#0f172a", size: 17 }, text: incomeByRegion.length ? "Regional Income Comparison" : "Regional Sample Comparison" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: surveyVariables.region || "Region" },
+          yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: incomeByRegion.length ? "Average income" : "Respondents" },
+        },
+        nextAnalyses: ["Compare demographic structure by region", "Check sample sizes before interpreting regional differences", "Explore labour status by geography"],
+        ready: regionalItems.length > 0,
+        title: incomeByRegion.length ? "Regional Income Comparison" : "Regional Sample Comparison",
+      };
+    }
+
+    return {
+      data: plotData,
+      interpretation: customChartReady
+        ? customVisualizationInterpretation
+        : "Choose numeric variables to generate a custom relationship chart.",
+      layout: {
+        ...baseLayout,
+        bargap: 0.18,
+        barmode: groupColumn ? "group" : "overlay",
+        title: { font: { color: "#0f172a", size: 17 }, text: "Custom Relationship" },
+        xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: selectedX, zerolinecolor: "#cbd5e1" },
+        yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: chartType === "histogram" ? "Count" : selectedY, zerolinecolor: "#cbd5e1" },
+      },
+      nextAnalyses: ["Try grouping by region or sex/gender", "Use histograms before interpreting outliers", "Move promising relationships into the Correlation or Insights views"],
+      ready: customChartReady,
+      title: "Custom Relationship",
+    };
+  }, [
+    activeVisualizationMode,
+    ageBands,
+    chartType,
+    customChartReady,
+    educationDistribution,
+    employmentDistribution,
+    filteredRows,
+    groupColumn,
+    incomeInterpretation,
+    labourInterpretation,
+    plotData,
+    populationInterpretation,
+    pyramidRows,
+    regionDistribution,
+    selectedX,
+    selectedY,
+    surveyVariables.income,
+    surveyVariables.region,
+    customVisualizationInterpretation,
+  ]);
 
   async function loadFile(file: File) {
     setError("");
@@ -1257,6 +1510,7 @@ export default function Home() {
       setGlobalSearch("");
       setGroupColumn("");
       setSort(null);
+      setVisualizationMode("auto");
     } catch (caught) {
       setRows([]);
       setError(caught instanceof Error ? caught.message : "Could not parse that file.");
@@ -1288,6 +1542,7 @@ export default function Home() {
     setGlobalSearch("");
     setGroupColumn("region");
     setSort(null);
+    setVisualizationMode("auto");
     setError("");
   }
 
@@ -1317,22 +1572,6 @@ export default function Home() {
   }
 
   const hasData = rows.length > 0;
-  const chartReady = numericColumns.length >= (chartType === "histogram" ? 1 : 2) && filteredRows.length > 0;
-  const visualizationInterpretation = useMemo(() => {
-    if (!chartReady) {
-      return "Choose numeric variables to generate a chart interpretation.";
-    }
-
-    if (chartType === "histogram") {
-      return `This histogram helps assess the distribution of ${selectedX}, including concentration, spread, and potential outliers.`;
-    }
-
-    if (chartType === "scatter" && regression) {
-      return `The scatterplot compares ${selectedX} and ${selectedY}. The linear trend is ${regression.slope >= 0 ? "positive" : "negative"}, with R² of ${regression.r2.toFixed(2)}.`;
-    }
-
-    return `This ${chartType} chart compares ${selectedX} and ${selectedY} across the current filtered dataset. Use grouping to check whether patterns differ by region, cohort, or social category.`;
-  }, [chartReady, chartType, regression, selectedX, selectedY]);
 
   return (
     <main className="relative min-h-screen overflow-hidden px-3 py-6 text-slate-100 sm:px-6 lg:px-10">
@@ -2251,86 +2490,118 @@ export default function Home() {
             )}
 
             {activeTab === "visualization" && (
-              <GlassPanel className="p-4 sm:p-5">
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="max-w-2xl">
-                    <h2 className="text-xl font-semibold text-white">Visualization</h2>
-                    <p className="mt-1 text-sm leading-6 text-slate-400">
-                      Build a readable chart from the filtered rows. Start with scatter for relationships, line for ordered measures, bar for category comparisons, or histogram for a single numeric distribution.
-                    </p>
-                    <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
-                      Tip: the color field is optional. Use it for regions, cohorts, or other groups when you want separate series.
+              <div className="space-y-5">
+                <GlassPanel className="p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="max-w-3xl">
+                      <h2 className="text-xl font-semibold text-white">Survey visualizations</h2>
+                      <p className="mt-1 text-sm leading-6 text-slate-400">
+                        Choose an analysis view based on detected social survey variables. The app prioritizes demographic, income, labour, education, and regional questions before generic chart settings.
+                      </p>
                     </div>
-                    <div className="mt-4">
-                      <InsightCard detail={visualizationInterpretation} label="Interpretation" />
+                    <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
+                      {activeVisualizationMode === "populationPyramid" ? "Recommended first: age and sex/gender were detected." : `Current view: ${socialPlot.title}`}
                     </div>
                   </div>
-                  <div className="chart-controls">
-                    <label>
-                      <span>Chart type</span>
-                      <select className="field-select" onChange={(event) => setChartType(event.target.value as ChartType)} value={chartType}>
-                        <option value="scatter">Scatter</option>
-                        <option value="bar">Bar</option>
-                        <option value="line">Line</option>
-                        <option value="histogram">Histogram</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>X column</span>
-                      <select className="field-select" onChange={(event) => setXColumn(event.target.value)} value={selectedX}>
-                        {numericColumns.map((column) => (
-                          <option key={column}>{column}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Y column</span>
-                      <select className="field-select" disabled={chartType === "histogram"} onChange={(event) => setYColumn(event.target.value)} value={selectedY}>
-                        {numericColumns.map((column) => (
-                          <option key={column}>{column}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>Color group</span>
-                      <select className="field-select" onChange={(event) => setGroupColumn(event.target.value)} value={groupColumn}>
-                        <option value="">No grouping</option>
-                        {[...textColumns, ...numericColumns].map((column) => (
-                          <option key={column} value={column}>
-                            {column}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
 
-                <div className="mt-6 chart-frame">
-                  {chartReady ? (
-                    <Plot
-                      config={{ displaylogo: false, responsive: true }}
-                      data={plotData}
-                      layout={{
-                        autosize: true,
-                        bargap: 0.18,
-                        barmode: groupColumn ? "group" : "overlay",
-                        font: { color: "#334155", family: "Arial, sans-serif" },
-                        height: 440,
-                        legend: { font: { color: "#475569" }, orientation: "h", x: 0, y: 1.14 },
-                        margin: { b: 64, l: 58, r: 24, t: 36 },
-                        paper_bgcolor: "rgba(0,0,0,0)",
-                        plot_bgcolor: "#f8fafc",
-                        xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: selectedX, zerolinecolor: "#cbd5e1" },
-                        yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: chartType === "histogram" ? "Count" : selectedY, zerolinecolor: "#cbd5e1" },
-                      }}
-                      style={{ height: "100%", width: "100%" }}
-                      useResizeHandler
-                    />
-                  ) : (
-                    <EmptyState title="Chart needs numeric data" detail="Choose a dataset with at least one numeric field for histograms, or two numeric fields for scatter, bar, and line charts." />
+                  <h3 className="mt-5 text-sm font-semibold uppercase text-slate-500">Recommended Visualizations</h3>
+                  <div className="visualization-recommendations mt-3">
+                    <button className={`visualization-card ${visualizationMode === "auto" ? "visualization-card-active" : ""}`} onClick={() => setVisualizationMode("auto")} type="button">
+                      <span>Auto Recommended</span>
+                      <strong>{recommendedVisualizations.find((item) => item.enabled)?.title ?? "Custom Relationship"}</strong>
+                      <em>Let the app choose the strongest survey chart.</em>
+                    </button>
+                    {recommendedVisualizations.map((item) => (
+                      <button
+                        className={`visualization-card ${activeVisualizationMode === item.key && visualizationMode !== "auto" ? "visualization-card-active" : ""} ${item.enabled ? "" : "visualization-card-disabled"}`}
+                        key={item.key}
+                        onClick={() => setVisualizationMode(item.key)}
+                        type="button"
+                      >
+                        <span>{item.enabled ? "Available" : "Not detected"}</span>
+                        <strong>{item.title}</strong>
+                        <em>{item.detail}</em>
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeVisualizationMode === "customRelationship" && (
+                    <div className="chart-controls mt-5">
+                      <label>
+                        <span>Relationship view</span>
+                        <select className="field-select" onChange={(event) => setChartType(event.target.value as ChartType)} value={chartType}>
+                          <option value="scatter">Relationship plot</option>
+                          <option value="bar">Grouped comparison</option>
+                          <option value="line">Ordered trend</option>
+                          <option value="histogram">Distribution</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>First measure</span>
+                        <select className="field-select" onChange={(event) => setXColumn(event.target.value)} value={selectedX}>
+                          {numericColumns.map((column) => (
+                            <option key={column}>{column}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Second measure</span>
+                        <select className="field-select" disabled={chartType === "histogram"} onChange={(event) => setYColumn(event.target.value)} value={selectedY}>
+                          {numericColumns.map((column) => (
+                            <option key={column}>{column}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Compare groups</span>
+                        <select className="field-select" onChange={(event) => setGroupColumn(event.target.value)} value={groupColumn}>
+                          <option value="">No grouping</option>
+                          {[...textColumns, ...numericColumns].map((column) => (
+                            <option key={column} value={column}>
+                              {column}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                   )}
-                </div>
-              </GlassPanel>
+                </GlassPanel>
+
+                <GlassPanel className="p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{socialPlot.title}</h3>
+                      <p className="mt-1 text-sm text-slate-400">Generated from the current search and filters.</p>
+                    </div>
+                    <div className="max-w-2xl">
+                      <InsightCard detail={socialPlot.interpretation} label="Automatic interpretation" />
+                    </div>
+                  </div>
+
+                  <div className="mt-6 chart-frame">
+                    {socialPlot.ready ? (
+                      <Plot
+                        config={{ displaylogo: false, responsive: true }}
+                        data={socialPlot.data}
+                        layout={socialPlot.layout}
+                        style={{ height: "100%", width: "100%" }}
+                        useResizeHandler
+                      />
+                    ) : (
+                      <EmptyState title="This survey view needs detected variables" detail="Use the Dataset Report to inspect variable detection, or choose another recommended visualization that is available for this dataset." />
+                    )}
+                  </div>
+
+                  <div className="mt-5">
+                    <h4 className="text-sm font-semibold uppercase text-slate-500">Suggested next analyses</h4>
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      {socialPlot.nextAnalyses.map((analysis) => (
+                        <InsightCard detail={analysis} key={analysis} label="Next step" />
+                      ))}
+                    </div>
+                  </div>
+                </GlassPanel>
+              </div>
             )}
 
             {activeTab === "preview" && (

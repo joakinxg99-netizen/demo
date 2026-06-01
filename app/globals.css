@@ -262,6 +262,73 @@ select:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.visualization-recommendations {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.visualization-card {
+  display: grid;
+  min-height: 9.5rem;
+  align-content: start;
+  gap: 0.5rem;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 1rem;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.visualization-card:hover {
+  border-color: #93c5fd;
+  background: #f8fbff;
+  transform: translateY(-1px);
+}
+
+.visualization-card span {
+  width: max-content;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  padding: 0.28rem 0.5rem;
+  text-transform: uppercase;
+}
+
+.visualization-card strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.visualization-card em {
+  color: #64748b;
+  font-size: 0.86rem;
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.visualization-card-active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.visualization-card-disabled {
+  opacity: 0.68;
+}
+
+.visualization-card-disabled span {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
 .chart-controls label {
   display: grid;
   gap: 0.4rem;
