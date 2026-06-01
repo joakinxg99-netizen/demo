@@ -352,6 +352,7 @@ select:disabled {
 
 .metric-tile {
   min-width: 0;
+  overflow: hidden;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.82);
@@ -367,10 +368,39 @@ select:disabled {
 
 .metric-tile strong {
   display: block;
+  min-width: 0;
+  overflow: hidden;
   margin-top: 0.45rem;
   color: #0f172a;
   font-size: 1.45rem;
   font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.percentile-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+}
+
+.percentile-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.85rem;
+}
+
+.percentile-card span,
+.percentile-card strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.percentile-card strong {
+  font-size: clamp(1.25rem, 2.2vw, 1.7rem);
+  line-height: 1.1;
 }
 
 .insight-card {
@@ -456,50 +486,111 @@ select:disabled {
   text-transform: capitalize;
 }
 
-.detected-grid {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+.compact-detection-panel {
+  border-color: #dbe3ef;
 }
 
-.detected-variable {
+.compact-toggle {
+  min-height: 2.25rem;
+  padding: 0.48rem 0.7rem;
+}
+
+.compact-detection-groups {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.compact-detection-section {
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.compact-detection-section summary {
   display: flex;
-  min-width: 0;
+  cursor: pointer;
+  list-style: none;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  border: 1px solid #dbeafe;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 0.9rem;
+  gap: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.55rem 0.7rem;
 }
 
-.detected-variable span {
-  display: block;
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.compact-detection-section summary::-webkit-details-marker {
+  display: none;
 }
 
-.detected-variable strong {
-  display: block;
-  max-width: 12rem;
-  overflow: hidden;
+.compact-detection-section summary span {
   color: #0f172a;
-  font-size: 0.95rem;
-  margin-top: 0.24rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.compact-detection-section summary strong {
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-weight: 850;
+  padding: 0.18rem 0.48rem;
+}
+
+.compact-detection-table {
+  display: grid;
+}
+
+.compact-detection-table div {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+  grid-template-columns: minmax(6rem, 1fr) minmax(5rem, 0.9fr) 3.8rem;
+  border-bottom: 1px solid #eef2f7;
+  padding: 0.45rem 0.7rem;
+}
+
+.compact-detection-table div:last-child {
+  border-bottom: 0;
+}
+
+.compact-detection-table span,
+.compact-detection-table strong,
+.compact-detection-table em {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.detected-variable-empty {
-  border-color: #e2e8f0;
+.compact-detection-table span {
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.compact-detection-table strong {
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.compact-detection-table em {
+  color: #2563eb;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 850;
+  text-align: right;
+}
+
+.compact-detection-empty {
   background: #f8fafc;
 }
 
-.detected-variable-empty strong {
+.compact-detection-empty strong,
+.compact-detection-empty em {
   color: #94a3b8;
 }
 
@@ -835,6 +926,25 @@ select:disabled {
 
   .chart-frame {
     min-height: 24rem;
+  }
+
+  .percentile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-detection-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-detection-table div {
+    grid-template-columns: minmax(5rem, 1fr) minmax(4.5rem, 0.85fr) 3.2rem;
+    padding: 0.42rem 0.58rem;
+  }
+
+  .compact-detection-table span,
+  .compact-detection-table strong,
+  .compact-detection-table em {
+    font-size: 0.76rem;
   }
 
   .tab-button {

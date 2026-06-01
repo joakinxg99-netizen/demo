@@ -653,6 +653,17 @@ function formatValue(value: CellValue) {
   return value ?? "-";
 }
 
+function formatLargeNumber(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: 1,
+    notation: "compact",
+  }).format(value);
+}
+
 function toCsv(rows: DataRow[], columns: string[]) {
   const escape = (value: CellValue) => {
     const text = value === null ? "" : String(value);
@@ -946,6 +957,7 @@ export default function Home() {
   const [yColumn, setYColumn] = useState("");
   const [groupColumn, setGroupColumn] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [detectedVariablesOpen, setDetectedVariablesOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   const columns = useMemo(() => getColumns(rows), [rows]);
@@ -1182,10 +1194,10 @@ export default function Home() {
         : "The mean and median are relatively close, suggesting the income distribution is not extremely skewed in the filtered data.";
     const spreadText =
       incomePercentiles.p90 !== null && incomePercentiles.p10 !== null
-        ? `The distance between P10 (${formatValue(incomePercentiles.p10)}) and P90 (${formatValue(incomePercentiles.p90)}) gives a quick view of income spread.`
+        ? `The distance between P10 (${formatLargeNumber(incomePercentiles.p10)}) and P90 (${formatLargeNumber(incomePercentiles.p90)}) gives a quick view of income spread.`
         : "";
 
-    return `${skewText} Median income is ${formatValue(incomeSummary.median)}. ${spreadText}`;
+    return `${skewText} Median income is ${formatLargeNumber(incomeSummary.median)}. ${spreadText}`;
   }, [incomePercentiles.p10, incomePercentiles.p90, incomeSummary]);
   const labourInterpretation = useMemo(() => {
     if (!employmentDistribution.length) {
@@ -1511,6 +1523,7 @@ export default function Home() {
       setGroupColumn("");
       setSort(null);
       setVisualizationMode("auto");
+      setDetectedVariablesOpen(false);
     } catch (caught) {
       setRows([]);
       setError(caught instanceof Error ? caught.message : "Could not parse that file.");
@@ -1543,6 +1556,7 @@ export default function Home() {
     setGroupColumn("region");
     setSort(null);
     setVisualizationMode("auto");
+    setDetectedVariablesOpen(false);
     setError("");
   }
 
@@ -1682,32 +1696,50 @@ export default function Home() {
               onUpdate={updateFilter}
             />
 
-            <GlassPanel className="p-4 sm:p-5">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <GlassPanel className="compact-detection-panel p-3 sm:p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-white">Detected survey variables</h2>
-                  <p className="mt-1 text-sm text-slate-400">
-                    Semantic detection combines EPH aliases, exact aliases, international survey names, partial matching, and keyword matching.
-                  </p>
+                  {detectedVariablesOpen && <p className="mt-1 text-xs text-slate-500">Compact semantic detection summary. Hover rows for detection method.</p>}
                 </div>
-                <p className="text-sm font-semibold text-blue-700">
-                  {surveyDetectionList.filter((detection) => detection.column).length} / {surveyDetectionList.length} concepts detected
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">
+                    {surveyDetectionList.filter((detection) => detection.column).length} / {surveyDetectionList.length} concepts detected
+                  </p>
+                  <button className="quiet-button compact-toggle" onClick={() => setDetectedVariablesOpen((current) => !current)} type="button">
+                    {detectedVariablesOpen ? "Hide detected variables" : "Show detected variables"}
+                  </button>
+                </div>
               </div>
-              <div className="detected-grid mt-5">
-                {surveyDetectionList.map((detection) => (
-                  <div className={`detected-variable ${detection.column ? "" : "detected-variable-empty"}`} key={detection.concept}>
-                    <div>
-                      <span>{detection.friendlyLabel}</span>
-                      <strong>{detection.column || "Not detected"}</strong>
-                    </div>
-                    <div className="text-right">
-                      <span>{detection.method}</span>
-                      <strong>{detection.confidence}%</strong>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {detectedVariablesOpen && (
+                <div className="compact-detection-groups mt-3">
+                  {REPORT_DETECTION_GROUPS.map((group) => {
+                    const detectedInGroup = group.concepts.filter((concept) => surveyDetections[concept].column).length;
+
+                    return (
+                      <details className="compact-detection-section" key={group.title} open>
+                        <summary>
+                          <span>{group.title}</span>
+                          <strong>{detectedInGroup} / {group.concepts.length}</strong>
+                        </summary>
+                        <div className="compact-detection-table">
+                          {group.concepts.map((concept) => {
+                            const detection = surveyDetections[concept];
+
+                            return (
+                              <div className={detection.column ? "" : "compact-detection-empty"} key={concept} title={`Detection method: ${detection.method}`}>
+                                <span>{detection.friendlyLabel}</span>
+                                <strong>{detection.column || "Not detected"}</strong>
+                                <em>{detection.confidence}%</em>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
+              )}
             </GlassPanel>
 
             {filteredRows.length === 0 && (
@@ -2189,7 +2221,7 @@ export default function Home() {
                   </GlassPanel>
                   <GlassPanel className="p-5">
                     <h3 className="text-lg font-semibold text-white">Income Percentiles</h3>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-5">
+                    <div className="percentile-grid mt-4">
                       {[
                         ["P10", incomePercentiles.p10],
                         ["P25", incomePercentiles.p25],
@@ -2197,15 +2229,15 @@ export default function Home() {
                         ["P75", incomePercentiles.p75],
                         ["P90", incomePercentiles.p90],
                       ].map(([label, value]) => (
-                        <div className="metric-tile" key={String(label)}>
+                        <div className="metric-tile percentile-card" key={String(label)}>
                           <span>{label}</span>
-                          <strong>{formatValue(value as CellValue)}</strong>
+                          <strong title={formatValue(value as CellValue)}>{formatLargeNumber(value as number | null)}</strong>
                         </div>
                       ))}
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <InsightCard detail={`Bottom group average: ${formatValue(topBottomIncome.bottomAverage)}`} label="Bottom 20%" />
-                      <InsightCard detail={`Top group average: ${formatValue(topBottomIncome.topAverage)}`} label="Top 20%" />
+                      <InsightCard detail={`Bottom group average: ${formatLargeNumber(topBottomIncome.bottomAverage)}`} label="Bottom 20%" />
+                      <InsightCard detail={`Top group average: ${formatLargeNumber(topBottomIncome.topAverage)}`} label="Top 20%" />
                     </div>
                   </GlassPanel>
                 </div>
