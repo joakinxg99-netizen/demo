@@ -377,6 +377,14 @@ select:disabled {
   background: #f8fafc;
 }
 
+.chart-note {
+  border-left: 3px solid #2563eb;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding-left: 0.75rem;
+}
+
 .metric-tile {
   min-width: 0;
   overflow: hidden;

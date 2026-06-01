@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
@@ -102,6 +102,10 @@ const ANALYTICAL_CONCEPTS = new Set<SurveyVariableKey>([
 
 function getConceptCategory(concept: SurveyVariableKey) {
   return REPORT_DETECTION_GROUPS.find((group) => group.concepts.includes(concept))?.title ?? "Other";
+}
+
+function formatResearchLabel(label: string) {
+  return label.replace(/(^|[\s/])([a-z])/g, (match, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
 }
 
 const SAMPLE_ROWS: DataRow[] = [
@@ -1171,6 +1175,10 @@ export default function Home() {
     () => new Map(variableDictionary.map((item) => [item.column, item.friendlyName])),
     [variableDictionary],
   );
+  const friendlyColumnName = useCallback(
+    (column: string) => formatResearchLabel(columnFriendlyLabels.get(column) ?? column),
+    [columnFriendlyLabels],
+  );
   const detectedAnalyticalColumns = useMemo(
     () =>
       new Set(
@@ -1251,7 +1259,7 @@ export default function Home() {
       if (profile.column === surveyVariables.income && profile.min !== null && profile.min < 0) {
         issues.push({
           column: profile.column,
-          detail: `Minimum observed income is ${formatValue(profile.min)}. Negative income should be verified before analysis.`,
+          detail: `Minimum observed income is ${formatValue(profile.min)}. Negative income should be verified before analysis and is excluded from income distribution charts by default.`,
           severity: "critical",
           title: "Negative income",
         });
@@ -1304,7 +1312,7 @@ export default function Home() {
         ? "Labour Analysis: describe employment status and relate labour-market groups to education or income."
         : "",
       correlations.length > 0
-        ? `Correlation Analysis: review the strongest numeric relationship, ${correlations[0].left} x ${correlations[0].right} (${correlations[0].value.toFixed(3)}).`
+        ? `Correlation Analysis: review the strongest numeric relationship, ${friendlyColumnName(correlations[0].left)} x ${friendlyColumnName(correlations[0].right)} (${correlations[0].value.toFixed(3)}).`
         : numericColumns.length >= 2
           ? "Correlation Analysis: compare numeric variables to identify relationships worth investigating."
           : "",
@@ -1325,7 +1333,7 @@ export default function Home() {
     return recommendations.length
       ? recommendations
       : ["Inspect Data Quality first, then use Visualization to choose relevant numeric and categorical variables for exploratory analysis."];
-  }, [correlations, dataQuality.completeness, dataQuality.duplicateRows, numericColumns.length, surveyDetections.quarter.column, surveyDetections.year.column, surveyVariables]);
+  }, [correlations, dataQuality.completeness, dataQuality.duplicateRows, friendlyColumnName, numericColumns.length, surveyDetections.quarter.column, surveyDetections.year.column, surveyVariables]);
 
   const executiveSummary = useMemo(() => {
     const detectedCore = [
@@ -1354,6 +1362,10 @@ export default function Home() {
   const ageSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.age), [filteredRows, surveyVariables.age]);
   const householdSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.household), [filteredRows, surveyVariables.household]);
   const incomeSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
+  const incomeValues = useMemo(() => getNumericValues(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
+  const nonNegativeIncomeValues = useMemo(() => incomeValues.filter((value) => value >= 0), [incomeValues]);
+  const negativeIncomeCount = incomeValues.length - nonNegativeIncomeValues.length;
+  const negativeIncomeChartNote = negativeIncomeCount > 0 ? "Negative income values were detected and excluded from this distribution chart." : "";
   const incomePercentiles = useMemo(() => getPercentiles(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
   const ageBands = useMemo(() => ageDistribution(filteredRows, surveyVariables.age), [filteredRows, surveyVariables.age]);
   const pyramidRows = useMemo(() => populationPyramid(filteredRows, surveyVariables.age, surveyVariables.sex), [filteredRows, surveyVariables.age, surveyVariables.sex]);
@@ -1443,8 +1455,8 @@ export default function Home() {
   }, [dataQuality.duplicateRows, missingProfiles]);
   const economicInsightsNarrative = useMemo(() => {
     if (correlations[0]) {
-      const left = columnFriendlyLabels.get(correlations[0].left) ?? correlations[0].left;
-      const right = columnFriendlyLabels.get(correlations[0].right) ?? correlations[0].right;
+      const left = friendlyColumnName(correlations[0].left);
+      const right = friendlyColumnName(correlations[0].right);
       return `The strongest numeric relationship in the filtered data is between ${left} and ${right} (r = ${correlations[0].value.toFixed(2)}). Treat this as an exploratory signal, not evidence of causality.`;
     }
 
@@ -1457,7 +1469,7 @@ export default function Home() {
     }
 
     return "Economic insight is limited until income, region, or at least two numeric variables are available in the filtered data.";
-  }, [columnFriendlyLabels, correlations, incomeBySex, regionDistribution]);
+  }, [correlations, friendlyColumnName, incomeBySex, regionDistribution]);
   const researchNarratives = useMemo(
     () => [
       { title: "Population", detail: populationInterpretation },
@@ -1483,7 +1495,7 @@ export default function Home() {
     const informationIssues = dataQualityIssues.filter((issue) => issue.severity === "information");
 
     if (criticalIssues.length) {
-      findings.push(`Critical data quality issues were detected: ${criticalIssues.slice(0, 3).map((issue) => `${issue.title.toLowerCase()} in ${columnFriendlyLabels.get(issue.column) ?? issue.column}`).join(", ")}.`);
+      findings.push(`Critical data quality issues were detected: ${criticalIssues.slice(0, 3).map((issue) => `${issue.title.toLowerCase()} in ${friendlyColumnName(issue.column)}`).join(", ")}.`);
     }
 
     if (!criticalIssues.length && (warningIssues.length || informationIssues.length)) {
@@ -1502,10 +1514,6 @@ export default function Home() {
       findings.push(`${variableDictionary.length.toLocaleString()} survey concept${variableDictionary.length === 1 ? " was" : "s were"} detected, including ${detectedConcepts.join(", ")}.`);
     }
 
-    if (ageSummary?.median !== null && ageSummary?.median !== undefined) {
-      findings.push(`Median age is ${formatLargeNumber(ageSummary.median)}.`);
-    }
-
     if (incomeSummary?.median !== null && incomeSummary?.median !== undefined) {
       findings.push(`Median income is ${formatLargeNumber(incomeSummary.median)}.`);
     }
@@ -1515,20 +1523,24 @@ export default function Home() {
     }
 
     if (correlations[0]) {
-      const left = columnFriendlyLabels.get(correlations[0].left) ?? correlations[0].left;
-      const right = columnFriendlyLabels.get(correlations[0].right) ?? correlations[0].right;
+      const left = friendlyColumnName(correlations[0].left);
+      const right = friendlyColumnName(correlations[0].right);
       findings.push(`The strongest numeric relationship is between ${left} and ${right} (r = ${correlations[0].value.toFixed(2)}).`);
     }
 
-    if (criticalIssues.length || warningIssues.length || dataQuality.duplicateRows > 0) {
-      findings.push("Data quality issues should be addressed before formal analysis.");
+    if (ageSummary?.median !== null && ageSummary?.median !== undefined) {
+      findings.push(`Median age is ${formatLargeNumber(ageSummary.median)}.`);
     }
 
+    const hasQualityIssues = criticalIssues.length || warningIssues.length || informationIssues.length || dataQuality.duplicateRows > 0;
+    const assessment = hasQualityIssues
+      ? "Overall assessment: suitable for exploratory analysis after addressing identified data quality issues."
+      : "Overall assessment: suitable for exploratory analysis.";
+
     const uniqueFindings = Array.from(new Set(findings));
-    return uniqueFindings.slice(0, 8);
+    return [...uniqueFindings.slice(0, 7), assessment];
   }, [
     ageSummary,
-    columnFriendlyLabels,
     columns.length,
     correlations,
     dataQuality.completeness,
@@ -1538,6 +1550,7 @@ export default function Home() {
     detectedDatasetType,
     employmentDistribution,
     filteredRows.length,
+    friendlyColumnName,
     incomeSummary,
     rows.length,
     variableDictionary,
@@ -1562,15 +1575,15 @@ export default function Home() {
     }
 
     if (chartType === "histogram") {
-      return `This distribution view helps assess ${selectedX}, including concentration, spread, and potential outliers.`;
+      return `This distribution view helps assess ${friendlyColumnName(selectedX)}, including concentration, spread, and potential outliers.`;
     }
 
     if (chartType === "scatter" && regression) {
-      return `The relationship view compares ${selectedX} and ${selectedY}. The linear trend is ${regression.slope >= 0 ? "positive" : "negative"}, with R² of ${regression.r2.toFixed(2)}.`;
+      return `The relationship view compares ${friendlyColumnName(selectedX)} and ${friendlyColumnName(selectedY)}. The linear trend is ${regression.slope >= 0 ? "positive" : "negative"}, with R² of ${regression.r2.toFixed(2)}.`;
     }
 
-    return `This custom view compares ${selectedX} and ${selectedY} across the current filtered dataset. Use grouping to check whether patterns differ by region, cohort, or social category.`;
-  }, [chartType, customChartReady, regression, selectedX, selectedY]);
+    return `This custom view compares ${friendlyColumnName(selectedX)} and ${friendlyColumnName(selectedY)} across the current filtered dataset. Use grouping to check whether patterns differ by region, cohort, or social category.`;
+  }, [chartType, customChartReady, friendlyColumnName, regression, selectedX, selectedY]);
   const recommendedVisualizations = useMemo(
     () => [
       {
@@ -1688,19 +1701,18 @@ export default function Home() {
     }
 
     if (activeVisualizationMode === "incomeDistribution") {
-      const values = getNumericValues(filteredRows, surveyVariables.income);
       return {
-        data: [{ marker: { color: "#0f766e" }, type: "histogram", x: values }] as PlotTrace[],
-        interpretation: values.length ? incomeInterpretation : "Detect an income variable to interpret the income distribution.",
+        data: [{ marker: { color: "#0f766e" }, type: "histogram", x: nonNegativeIncomeValues }] as PlotTrace[],
+        interpretation: nonNegativeIncomeValues.length ? [incomeInterpretation, negativeIncomeChartNote].filter(Boolean).join(" ") : "Detect an income variable to interpret the income distribution.",
         layout: {
           ...baseLayout,
           bargap: 0.08,
           title: { font: { color: "#0f172a", size: 17 }, text: "Income Distribution" },
-          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: surveyVariables.income || "Income" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: surveyVariables.income ? friendlyColumnName(surveyVariables.income) : "Income" },
           yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: "Respondents" },
         },
         nextAnalyses: ["Compare median income by sex/gender", "Review top and bottom income groups", "Check whether zero or missing income values need recoding"],
-        ready: values.length > 0,
+        ready: nonNegativeIncomeValues.length > 0,
         title: "Income Distribution",
       };
     }
@@ -1752,7 +1764,7 @@ export default function Home() {
         layout: {
           ...baseLayout,
           title: { font: { color: "#0f172a", size: 17 }, text: incomeByRegion.length ? "Regional Income Comparison" : "Regional Sample Comparison" },
-          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: surveyVariables.region || "Region" },
+          xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: surveyVariables.region ? friendlyColumnName(surveyVariables.region) : "Region" },
           yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: incomeByRegion.length ? "Average income" : "Respondents" },
         },
         nextAnalyses: ["Compare demographic structure by region", "Check sample sizes before interpreting regional differences", "Explore labour status by geography"],
@@ -1771,8 +1783,8 @@ export default function Home() {
         bargap: 0.18,
         barmode: groupColumn ? "group" : "overlay",
         title: { font: { color: "#0f172a", size: 17 }, text: "Custom Relationship" },
-        xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: selectedX, zerolinecolor: "#cbd5e1" },
-        yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: chartType === "histogram" ? "Count" : selectedY, zerolinecolor: "#cbd5e1" },
+        xaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: friendlyColumnName(selectedX), zerolinecolor: "#cbd5e1" },
+        yaxis: { gridcolor: "#e2e8f0", linecolor: "#cbd5e1", title: chartType === "histogram" ? "Count" : friendlyColumnName(selectedY), zerolinecolor: "#cbd5e1" },
       },
       nextAnalyses: ["Try grouping by region or sex/gender", "Use histograms before interpreting outliers", "Move promising relationships into the Correlation or Insights views"],
       ready: customChartReady,
@@ -1786,9 +1798,12 @@ export default function Home() {
     educationDistribution,
     employmentDistribution,
     filteredRows,
+    friendlyColumnName,
     groupColumn,
     incomeInterpretation,
     labourInterpretation,
+    negativeIncomeChartNote,
+    nonNegativeIncomeValues,
     plotData,
     populationInterpretation,
     pyramidRows,
@@ -2014,7 +2029,11 @@ export default function Home() {
     };
     const histogramChart = (values: number[], title: string) => {
       if (!values.length) {
-        return emptyChart(`${title} is not available because no numeric income values were found.`);
+        return emptyChart(
+          negativeIncomeCount > 0
+            ? `${title} is not available because all numeric income values in the current filtered dataset are negative and excluded by default.`
+            : `${title} is not available because no numeric income values were found.`,
+        );
       }
 
       const min = Math.min(...values);
@@ -2112,25 +2131,26 @@ export default function Home() {
     ];
     const detectedItems = variableDictionary.map((item) => `${item.column} -> ${item.friendlyName} (${item.confidence}%)`);
     const qualityItems = dataQualityIssues.length
-      ? dataQualityIssues.map((issue) => `${issue.severity.toUpperCase()}: ${issue.title} - ${issue.column}: ${issue.detail}`)
+      ? dataQualityIssues.map((issue) => `${issue.severity.toUpperCase()}: ${issue.title} - ${friendlyColumnName(issue.column)}: ${issue.detail}`)
       : ["No critical, warning, or information-level data quality issues detected."];
     const populationItems = [
       populationInterpretation,
-      `Age variable: ${surveyVariables.age || "Not detected"}`,
-      `Sex/gender variable: ${surveyVariables.sex || "Not detected"}`,
+      `Age variable: ${surveyVariables.age ? friendlyColumnName(surveyVariables.age) : "Not detected"}`,
+      `Sex/gender variable: ${surveyVariables.sex ? friendlyColumnName(surveyVariables.sex) : "Not detected"}`,
     ];
     const incomeItems = [
       incomeInterpretation,
-      `Income variable: ${surveyVariables.income || "Not detected"}`,
+      `Income variable: ${surveyVariables.income ? friendlyColumnName(surveyVariables.income) : "Not detected"}`,
       `Median income: ${incomeSummary ? formatLargeNumber(incomeSummary.median) : "-"}`,
-    ];
+      negativeIncomeChartNote,
+    ].filter(Boolean);
     const labourItems = [
       labourInterpretation,
-      `Employment variable: ${surveyVariables.employment || "Not detected"}`,
+      `Employment variable: ${surveyVariables.employment ? friendlyColumnName(surveyVariables.employment) : "Not detected"}`,
       `Largest labour category: ${employmentDistribution[0]?.label ?? "-"}`,
-    ];
+    ].filter(Boolean);
     const strongestCorrelationText = correlations[0]
-      ? `Strongest numeric relationship: ${columnFriendlyLabels.get(correlations[0].left) ?? correlations[0].left} x ${columnFriendlyLabels.get(correlations[0].right) ?? correlations[0].right} (${correlations[0].value.toFixed(3)})`
+      ? `Strongest numeric relationship: ${friendlyColumnName(correlations[0].left)} x ${friendlyColumnName(correlations[0].right)} (${correlations[0].value.toFixed(3)})`
       : "No numeric correlation available.";
     const insightItems = [
       strongestCorrelationText,
@@ -2159,6 +2179,7 @@ export default function Home() {
     ul { margin-top: 8px; padding-left: 18px; }
     .cover { border-bottom: 2px solid #dbeafe; margin-bottom: 24px; padding-bottom: 18px; }
     .cover p { color: #475569; margin: 4px 0; }
+    .platform { color: #1e3a8a; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; margin: 0 0 10px; text-transform: uppercase; }
     .cover-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 18px; }
     .cover-metric { border: 1px solid #dbe3ef; border-radius: 8px; background: #f8fafc; padding: 10px; }
     .cover-metric span { color: #64748b; display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -2175,6 +2196,7 @@ export default function Home() {
     .chart-title { fill: #0f172a; font-size: 15px; font-weight: 700; }
     .chart-label { fill: #334155; font-size: 11px; }
     .chart-value { fill: #64748b; font-size: 11px; }
+    .chart-note { border-left: 3px solid #2563eb; color: #475569; font-size: 12px; margin-top: 8px; padding-left: 10px; }
     .chart-empty { border: 1px dashed #cbd5e1; border-radius: 8px; color: #64748b; font-size: 13px; padding: 18px; }
     .quality-summary-chart { display: grid; gap: 12px; }
     .print-progress { height: 14px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
@@ -2192,7 +2214,9 @@ export default function Home() {
 <body>
   <button onclick="window.print()">Save as PDF</button>
   <div class="cover">
+    <p class="platform">Generated by Social Data Explorer</p>
     <h1>Social Data Explorer Research Report</h1>
+    <p><strong>Research &amp; Survey Intelligence Platform</strong></p>
     <p><strong>Dataset:</strong> ${escapeHtml(fileName || "Untitled dataset")}</p>
     <span class="type-badge">${escapeHtml(detectedDatasetType)}</span>
     <p>Generated with Social Data Explorer on ${escapeHtml(reportDate)} from the current filtered dataset.</p>
@@ -2210,7 +2234,7 @@ export default function Home() {
   ${section("Detected Variables", detectedItems.length ? list(detectedItems) : "<p>No survey variables were detected.</p>")}
   ${section("Data Quality", list(qualityItems), qualityChart())}
   ${section("Population Analysis", list(populationItems), `${pyramidChart()}${barChart(ageBands.map((item) => ({ label: item.label, value: item.count })), { title: "Age Distribution" })}`)}
-  ${section("Income Analysis", list(incomeItems), histogramChart(getNumericValues(filteredRows, surveyVariables.income), "Income Distribution"))}
+  ${section("Income Analysis", list(incomeItems), `${histogramChart(nonNegativeIncomeValues, "Income Distribution")}${negativeIncomeChartNote ? `<p class="chart-note">${escapeHtml(negativeIncomeChartNote)}</p>` : ""}`)}
   ${section("Labour Analysis", list(labourItems), `${barChart(employmentDistribution.map((item) => ({ label: item.label, value: item.count })), { title: "Employment Structure" })}${barChart(educationDistribution.map((item) => ({ label: item.label, value: item.count })), { title: "Education Profile" })}`)}
   ${section("Economic Insights", list(insightItems), barChart(regionalComparisonItems, { title: surveyVariables.income && surveyVariables.region ? "Regional Income Comparison" : "Regional Comparison", valueFormatter: (value) => (surveyVariables.income && surveyVariables.region ? formatLargeNumber(value) : value.toLocaleString()) }))}
   ${section("Recommended Analyses", list(recommendedAnalyses))}
@@ -2657,7 +2681,7 @@ export default function Home() {
                           <div className="quality-issue-card" key={`${issue.severity}-${issue.column}-${issue.title}`}>
                             <span className={`severity-badge severity-${issue.severity}`}>{issue.severity}</span>
                             <strong>{issue.title}</strong>
-                            <p>{issue.column}: {issue.detail}</p>
+                            <p>{friendlyColumnName(issue.column)}: {issue.detail}</p>
                           </div>
                         ))
                       ) : (
@@ -2703,7 +2727,7 @@ export default function Home() {
                           <InsightCard
                             detail={profile.reasons.join("; ")}
                             key={profile.column}
-                            label={profile.column}
+                            label={friendlyColumnName(profile.column)}
                             tone="warning"
                           />
                         ))
@@ -2742,7 +2766,7 @@ export default function Home() {
                   <GlassPanel className="p-5">
                     <p className="text-sm text-slate-400">Strongest signal</p>
                     <p className="mt-2 text-3xl font-semibold text-white">{correlations[0] ? correlations[0].value.toFixed(2) : "-"}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">{correlations[0] ? `${correlations[0].left} x ${correlations[0].right}` : "Need two numeric fields"}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{correlations[0] ? `${friendlyColumnName(correlations[0].left)} x ${friendlyColumnName(correlations[0].right)}` : "Need two numeric fields"}</p>
                   </GlassPanel>
                   <GlassPanel className="p-5">
                     <p className="text-sm text-slate-400">Filtered export</p>
@@ -2930,7 +2954,8 @@ export default function Home() {
                     <h3 className="text-lg font-semibold text-white">Income Distribution</h3>
                     {surveyVariables.income ? (
                       <div className="mt-4">
-                        <MiniBars values={getNumericValues(filteredRows, surveyVariables.income)} />
+                        <MiniBars values={nonNegativeIncomeValues} />
+                        {negativeIncomeChartNote && <p className="chart-note mt-3">{negativeIncomeChartNote}</p>}
                       </div>
                     ) : (
                       <EmptyState title="No income distribution yet" detail="Detect an income variable to render a distribution." />
@@ -3091,14 +3116,14 @@ export default function Home() {
                       <InsightCard
                         detail={
                           correlations[0]
-                            ? `Among numeric variables, the strongest relationship is ${correlations[0].left} x ${correlations[0].right} at ${correlations[0].value.toFixed(3)}.`
+                            ? `Among numeric variables, the strongest relationship is ${friendlyColumnName(correlations[0].left)} x ${friendlyColumnName(correlations[0].right)} at ${correlations[0].value.toFixed(3)}.`
                             : "No numeric relationship can be calculated yet. At least two numeric variables with paired values are needed."
                         }
                         label="Strongest numeric relationship"
                       />
                       {notableProfiles.slice(0, 4).map((profile) => (
                         <InsightCard
-                          detail={`${profile.column}: average ${formatValue(profile.average)}, low ${formatValue(profile.min)}, high ${formatValue(profile.max)}.`}
+                          detail={`${friendlyColumnName(profile.column)}: average ${formatValue(profile.average)}, low ${formatValue(profile.min)}, high ${formatValue(profile.max)}.`}
                           key={profile.column}
                           label="Numeric summary"
                         />
@@ -3236,7 +3261,7 @@ export default function Home() {
                           <div className="mt-3 space-y-2">
                             {issues.length ? (
                               issues.slice(0, 5).map((issue) => (
-                                <p key={`${severity}-${issue.column}-${issue.title}`}>{issue.title}: {issue.column}</p>
+                                <p key={`${severity}-${issue.column}-${issue.title}`}>{issue.title}: {friendlyColumnName(issue.column)}</p>
                               ))
                             ) : (
                               <p>No {severity} issues detected.</p>
@@ -3260,7 +3285,7 @@ export default function Home() {
                         <InsightCard
                           detail={`${profile.missing.toLocaleString()} missing values; ${profile.completeness.toFixed(1)}% complete.`}
                           key={profile.column}
-                          label={profile.column}
+                          label={friendlyColumnName(profile.column)}
                           tone={profile.completeness < 90 ? "warning" : "default"}
                         />
                       ))
