@@ -1810,8 +1810,127 @@ export default function Home() {
   }
 
   function buildResearchReportHtml() {
+    const chartPalette = ["#2563eb", "#7c3aed", "#0f766e", "#b45309", "#be123c", "#475569"];
+    const truncate = (value: string, length = 28) => (value.length > length ? `${value.slice(0, length - 1)}…` : value);
+    const emptyChart = (message: string) => `<div class="chart-empty">${escapeHtml(message)}</div>`;
+    const barChart = (items: { label: string; value: number }[], options: { title: string; valueFormatter?: (value: number) => string }) => {
+      const visibleItems = items.filter((item) => Number.isFinite(item.value) && item.value > 0).slice(0, 10);
+
+      if (!visibleItems.length) {
+        return emptyChart(`${options.title} is not available for the current filtered dataset.`);
+      }
+
+      const width = 760;
+      const rowHeight = 34;
+      const left = 180;
+      const chartWidth = 450;
+      const height = 48 + visibleItems.length * rowHeight;
+      const maxValue = Math.max(1, ...visibleItems.map((item) => item.value));
+      const formatter = options.valueFormatter ?? ((value: number) => value.toLocaleString());
+
+      return `<svg class="report-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(options.title)}">
+        <text x="0" y="20" class="chart-title">${escapeHtml(options.title)}</text>
+        ${visibleItems
+          .map((item, index) => {
+            const y = 42 + index * rowHeight;
+            const barWidth = Math.max(3, (item.value / maxValue) * chartWidth);
+            const color = chartPalette[index % chartPalette.length];
+
+            return `<text x="0" y="${y + 15}" class="chart-label">${escapeHtml(truncate(item.label))}</text>
+              <rect x="${left}" y="${y}" width="${barWidth}" height="18" rx="4" fill="${color}" opacity="0.86" />
+              <text x="${left + barWidth + 8}" y="${y + 14}" class="chart-value">${escapeHtml(formatter(item.value))}</text>`;
+          })
+          .join("")}
+      </svg>`;
+    };
+    const histogramChart = (values: number[], title: string) => {
+      if (!values.length) {
+        return emptyChart(`${title} is not available because no numeric income values were found.`);
+      }
+
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const binCount = Math.min(8, Math.max(1, values.length));
+      const span = max - min || 1;
+      const bins = Array.from({ length: binCount }, (_, index) => ({
+        count: 0,
+        label: `${formatLargeNumber(min + (span / binCount) * index)}-${formatLargeNumber(min + (span / binCount) * (index + 1))}`,
+      }));
+
+      values.forEach((value) => {
+        const index = Math.min(binCount - 1, Math.floor(((value - min) / span) * binCount));
+        bins[index].count += 1;
+      });
+
+      return barChart(
+        bins.map((bin) => ({ label: bin.label, value: bin.count })),
+        { title },
+      );
+    };
+    const pyramidChart = () => {
+      const ready = pyramidRows.some((row) => row.left.count || row.right.count);
+
+      if (!ready) {
+        return emptyChart("Population pyramid is not available because age and sex/gender were not both detected.");
+      }
+
+      const width = 760;
+      const rowHeight = 34;
+      const center = 380;
+      const chartWidth = 250;
+      const height = 54 + pyramidRows.length * rowHeight;
+      const maxCount = Math.max(1, ...pyramidRows.flatMap((row) => [row.left.count, row.right.count]));
+
+      return `<svg class="report-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Population Pyramid">
+        <text x="0" y="20" class="chart-title">Population Pyramid</text>
+        <text x="${center - chartWidth}" y="42" class="chart-value">${escapeHtml(pyramidRows[0]?.left.label ?? "Group A")}</text>
+        <text x="${center + chartWidth - 80}" y="42" class="chart-value">${escapeHtml(pyramidRows[0]?.right.label ?? "Group B")}</text>
+        <line x1="${center}" y1="30" x2="${center}" y2="${height - 4}" stroke="#cbd5e1" />
+        ${pyramidRows
+          .map((row, index) => {
+            const y = 56 + index * rowHeight;
+            const leftWidth = (row.left.count / maxCount) * chartWidth;
+            const rightWidth = (row.right.count / maxCount) * chartWidth;
+
+            return `<text x="${center - 24}" y="${y + 14}" class="chart-label">${escapeHtml(row.band)}</text>
+              <rect x="${center - leftWidth - 42}" y="${y}" width="${leftWidth}" height="18" rx="4" fill="#60a5fa" opacity="0.9" />
+              <rect x="${center + 42}" y="${y}" width="${rightWidth}" height="18" rx="4" fill="#a78bfa" opacity="0.9" />
+              <text x="${center - leftWidth - 78}" y="${y + 14}" class="chart-value">${row.left.count || ""}</text>
+              <text x="${center + rightWidth + 50}" y="${y + 14}" class="chart-value">${row.right.count || ""}</text>`;
+          })
+          .join("")}
+      </svg>`;
+    };
+    const qualityChart = () => {
+      const severityCounts = (["critical", "warning", "information"] as QualitySeverity[]).map((severity) => ({
+        label: severity[0].toUpperCase() + severity.slice(1),
+        value: dataQualityIssues.filter((issue) => issue.severity === severity).length,
+      }));
+      const typeItems = [
+        { label: "Numeric variables", value: typeCounts.numeric },
+        { label: "Categorical variables", value: typeCounts.text },
+        { label: "Mixed variables", value: typeCounts.mixed },
+        { label: "Empty variables", value: typeCounts.empty },
+      ];
+
+      return `<div class="quality-summary-chart">
+        <div>
+          <strong>Completeness</strong>
+          <div class="print-progress"><i style="width:${Math.max(0, Math.min(100, dataQuality.completeness))}%"></i></div>
+          <p>${dataQuality.completeness.toFixed(1)}% complete; ${dataQuality.missingValues.toLocaleString()} missing values.</p>
+        </div>
+        ${barChart([...severityCounts, ...typeItems], { title: "Data Quality Summary" })}
+      </div>`;
+    };
+    const regionalComparisonItems = (() => {
+      const incomeByRegion = averageByGroup(filteredRows, surveyVariables.region, surveyVariables.income);
+      return incomeByRegion.length
+        ? incomeByRegion.map((item) => ({ label: item.label, value: item.average }))
+        : regionDistribution.map((item) => ({ label: item.label, value: item.count }));
+    })();
     const overviewItems = [
-      `Rows: ${rows.length.toLocaleString()}`,
+      `Filtered rows: ${filteredRows.length.toLocaleString()}`,
+      `Loaded rows: ${rows.length.toLocaleString()}`,
       `Columns: ${columns.length.toLocaleString()}`,
       `Missing values: ${dataQuality.missingValues.toLocaleString()}`,
       `Duplicate rows: ${dataQuality.duplicateRows.toLocaleString()}`,
@@ -1838,9 +1957,11 @@ export default function Home() {
     ];
     const insightItems = [
       correlations[0] ? `Strongest numeric relationship: ${correlations[0].left} x ${correlations[0].right} (${correlations[0].value.toFixed(3)})` : "No numeric correlation available.",
+      incomeBySex[0] ? `Highest average income by sex/gender: ${incomeBySex[0].label} (${formatLargeNumber(incomeBySex[0].average)}).` : "Income by sex/gender is not available.",
       ...recommendedAnalyses.slice(0, 5),
     ];
     const list = (items: string[]) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+    const section = (title: string, content: string, chart = "") => `<section class="report-section"><h2>${escapeHtml(title)}</h2>${content}${chart ? `<div class="chart-wrap">${chart}</div>` : ""}</section>`;
 
     return `<!doctype html>
 <html>
@@ -1848,27 +1969,51 @@ export default function Home() {
   <meta charset="utf-8" />
   <title>Social Data Explorer Research Report</title>
   <style>
-    body { color: #0f172a; font-family: Arial, sans-serif; line-height: 1.55; margin: 40px; }
-    h1 { font-size: 28px; margin-bottom: 4px; }
-    h2 { border-top: 1px solid #cbd5e1; font-size: 18px; margin-top: 28px; padding-top: 18px; }
+    * { box-sizing: border-box; }
+    body { background: #ffffff; color: #0f172a; font-family: Arial, sans-serif; line-height: 1.55; margin: 40px; }
+    button { border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; cursor: pointer; font-weight: 700; margin-bottom: 20px; padding: 8px 12px; }
+    h1 { font-size: 30px; margin: 0 0 4px; }
+    h2 { border-top: 1px solid #cbd5e1; font-size: 18px; margin: 28px 0 12px; padding-top: 18px; }
+    h3 { font-size: 15px; margin: 16px 0 8px; }
     p, li { font-size: 13px; }
+    ul { margin-top: 8px; padding-left: 18px; }
+    .cover { border-bottom: 2px solid #dbeafe; margin-bottom: 24px; padding-bottom: 18px; }
+    .cover p { color: #475569; margin: 4px 0; }
     .summary { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px; }
-    @media print { body { margin: 24px; } button { display: none; } }
+    .report-section { break-inside: avoid; page-break-inside: avoid; }
+    .chart-wrap { margin-top: 14px; overflow: hidden; }
+    .report-chart { display: block; height: auto; max-width: 100%; width: 100%; }
+    .chart-title { fill: #0f172a; font-size: 15px; font-weight: 700; }
+    .chart-label { fill: #334155; font-size: 11px; }
+    .chart-value { fill: #64748b; font-size: 11px; }
+    .chart-empty { border: 1px dashed #cbd5e1; border-radius: 8px; color: #64748b; font-size: 13px; padding: 18px; }
+    .quality-summary-chart { display: grid; gap: 12px; }
+    .print-progress { height: 14px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+    .print-progress i { display: block; height: 100%; border-radius: inherit; background: #2563eb; }
+    @media print {
+      body { margin: 24px; }
+      button { display: none; }
+      .report-section { break-inside: avoid; page-break-inside: avoid; }
+      .report-chart, .chart-wrap, .quality-summary-chart { break-inside: avoid; page-break-inside: avoid; }
+    }
   </style>
 </head>
 <body>
   <button onclick="window.print()">Save as PDF</button>
-  <h1>Social Data Explorer Research Report</h1>
-  <p>${escapeHtml(fileName || "Untitled dataset")}</p>
-  <h2>Executive Summary</h2>
-  <p class="summary">${escapeHtml(executiveSummary)}</p>
-  <h2>Dataset Overview</h2>${list(overviewItems)}
-  <h2>Detected Variables</h2>${list(detectedItems)}
-  <h2>Data Quality</h2>${list(qualityItems)}
-  <h2>Population</h2>${list(populationItems)}
-  <h2>Income</h2>${list(incomeItems)}
-  <h2>Labour</h2>${list(labourItems)}
-  <h2>Key Insights</h2>${list(insightItems)}
+  <div class="cover">
+    <h1>Social Data Explorer Research Report</h1>
+    <p>${escapeHtml(fileName || "Untitled dataset")}</p>
+    <p>Generated from the current filtered dataset on ${new Date().toLocaleDateString()}.</p>
+  </div>
+  ${section("Executive Summary", `<p class="summary">${escapeHtml(executiveSummary)}</p>`)}
+  ${section("Dataset Overview", list(overviewItems))}
+  ${section("Detected Variables", detectedItems.length ? list(detectedItems) : "<p>No survey variables were detected.</p>")}
+  ${section("Data Quality", list(qualityItems), qualityChart())}
+  ${section("Population Analysis", list(populationItems), `${pyramidChart()}${barChart(ageBands.map((item) => ({ label: item.label, value: item.count })), { title: "Age Distribution" })}`)}
+  ${section("Income Analysis", list(incomeItems), histogramChart(getNumericValues(filteredRows, surveyVariables.income), "Income Distribution"))}
+  ${section("Labour Analysis", list(labourItems), `${barChart(employmentDistribution.map((item) => ({ label: item.label, value: item.count })), { title: "Employment Structure" })}${barChart(educationDistribution.map((item) => ({ label: item.label, value: item.count })), { title: "Education Profile" })}`)}
+  ${section("Economic Insights", list(insightItems), barChart(regionalComparisonItems, { title: surveyVariables.income && surveyVariables.region ? "Regional Income Comparison" : "Regional Comparison", valueFormatter: (value) => (surveyVariables.income && surveyVariables.region ? formatLargeNumber(value) : value.toLocaleString()) }))}
+  ${section("Recommended Analyses", list(recommendedAnalyses))}
 </body>
 </html>`;
   }
