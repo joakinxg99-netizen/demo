@@ -85,6 +85,21 @@ const REPORT_DETECTION_GROUPS: { concepts: SurveyVariableKey[]; title: string }[
   { title: "Identifiers", concepts: ["householdId", "personId"] },
 ];
 
+const ANALYTICAL_CONCEPTS = new Set<SurveyVariableKey>([
+  "age",
+  "sex",
+  "individualIncome",
+  "householdIncome",
+  "employment",
+  "occupation",
+  "education",
+  "region",
+  "householdSize",
+  "children",
+  "year",
+  "quarter",
+]);
+
 const SAMPLE_ROWS: DataRow[] = [
   { respondent_id: 1, region: "North", age: 22, sex: "Female", education: "University", employment_status: "Student", monthly_income: 950, household_size: 3, children: 0, housing_tenure: "Rent" },
   { respondent_id: 2, region: "North", age: 41, sex: "Male", education: "Secondary", employment_status: "Employed", monthly_income: 3200, household_size: 4, children: 2, housing_tenure: "Own" },
@@ -380,6 +395,24 @@ function normalizeColumnName(column: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function columnNameSuggestsIdentifier(column: string) {
+  const normalized = normalizeColumnName(column);
+  const parts = normalized.split("_");
+  const identifierTokens = ["id", "code", "key", "respondent", "sample", "household", "person", "identifier", "identificador", "codigo", "codusu", "hogar", "componente"];
+
+  return identifierTokens.some((token) => parts.includes(token) || normalized === token || normalized.startsWith(`${token}_`) || normalized.endsWith(`_${token}`));
+}
+
+function isPotentialIdentifier(profile: ColumnProfile, rowCount: number, analyticalColumns: Set<string>) {
+  if (analyticalColumns.has(profile.column) || rowCount <= 1) {
+    return false;
+  }
+
+  const uniquenessShare = profile.unique / rowCount;
+
+  return columnNameSuggestsIdentifier(profile.column) || (rowCount > 8 && uniquenessShare >= 0.95);
 }
 
 function scoreColumnForConcept(column: string, concept: SurveyVariableKey): SurveyDetection | null {
@@ -1129,6 +1162,38 @@ export default function Home() {
         })),
     [surveyDetectionList],
   );
+  const detectedAnalyticalColumns = useMemo(
+    () =>
+      new Set(
+        (Object.keys(surveyDetections) as SurveyVariableKey[])
+          .filter((concept) => ANALYTICAL_CONCEPTS.has(concept) && surveyDetections[concept].column)
+          .map((concept) => surveyDetections[concept].column),
+      ),
+    [surveyDetections],
+  );
+  const detectedDatasetType = useMemo(() => {
+    const ephSignals = surveyDetectionList.filter((detection) => detection.method === "EPH alias").length;
+    const hasPopulation = Boolean(surveyVariables.age || surveyVariables.sex || surveyVariables.household || surveyVariables.children);
+    const hasEconomics = Boolean(surveyVariables.income || surveyVariables.employment || surveyVariables.occupation);
+
+    if (ephSignals >= 3) {
+      return "Argentina EPH-style social survey";
+    }
+
+    if (hasPopulation && hasEconomics) {
+      return "Demographic and labour-market survey";
+    }
+
+    if (hasEconomics) {
+      return "Economic or labour-market survey";
+    }
+
+    if (hasPopulation) {
+      return "Demographic survey";
+    }
+
+    return "General social dataset";
+  }, [surveyDetectionList, surveyVariables]);
   const typeCounts = useMemo(
     () =>
       columnProfiles.reduce(
@@ -1145,7 +1210,7 @@ export default function Home() {
             profile.missing > 0 && profile.completeness < 90 ? `${profile.missing.toLocaleString()} missing values` : "",
             profile.unique <= 1 && rows.length > 1 ? "only one observed value" : "",
             profile.type === "mixed" ? "mixed numeric/text values" : "",
-            profile.unique === rows.length && rows.length > 8 ? "unique in every row; likely an identifier" : "",
+            isPotentialIdentifier(profile, rows.length, detectedAnalyticalColumns) ? "likely identifier column" : "",
             profile.column === surveyVariables.age && profile.min !== null && profile.min < 0 ? "age contains negative values" : "",
             profile.column === surveyVariables.age && profile.max !== null && profile.max > 120 ? "age contains values above 120" : "",
             profile.column === surveyVariables.income && profile.min !== null && profile.min < 0 ? "income contains negative values" : "",
@@ -1158,7 +1223,7 @@ export default function Home() {
         .filter((profile) => profile.reasons.length > 0)
         .sort((a, b) => a.completeness - b.completeness)
         .slice(0, 8),
-    [columnProfiles, rows.length, surveyVariables],
+    [columnProfiles, detectedAnalyticalColumns, rows.length, surveyVariables],
   );
   const dataQualityIssues = useMemo(() => {
     const issues: { column: string; detail: string; severity: QualitySeverity; title: string }[] = [];
@@ -1200,10 +1265,12 @@ export default function Home() {
         });
       }
 
-      if (profile.unique === rows.length && rows.length > 8) {
+      if (isPotentialIdentifier(profile, rows.length, detectedAnalyticalColumns)) {
         issues.push({
           column: profile.column,
-          detail: "Unique in every row; likely an identifier rather than an analytical variable.",
+          detail: columnNameSuggestsIdentifier(profile.column)
+            ? "Column name suggests an identifier, key, code, respondent, sample, household, or person field."
+            : "Very high uniqueness and not detected as an analytical survey concept.",
           severity: "information",
           title: "Potential identifier",
         });
@@ -1223,7 +1290,7 @@ export default function Home() {
       const order: Record<QualitySeverity, number> = { critical: 0, warning: 1, information: 2 };
       return order[a.severity] - order[b.severity];
     });
-  }, [columnProfiles, dataQuality.duplicateRows, rows.length, surveyVariables.age, surveyVariables.income]);
+  }, [columnProfiles, dataQuality.duplicateRows, detectedAnalyticalColumns, rows.length, surveyVariables.age, surveyVariables.income]);
   const recommendedAnalyses = useMemo(() => {
     const recommendations = [
       surveyVariables.age || surveyVariables.sex || surveyVariables.household
@@ -1928,6 +1995,11 @@ export default function Home() {
         ? incomeByRegion.map((item) => ({ label: item.label, value: item.average }))
         : regionDistribution.map((item) => ({ label: item.label, value: item.count }));
     })();
+    const reportDate = new Intl.DateTimeFormat("en", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date());
     const overviewItems = [
       `Filtered rows: ${filteredRows.length.toLocaleString()}`,
       `Loaded rows: ${rows.length.toLocaleString()}`,
@@ -1979,6 +2051,10 @@ export default function Home() {
     ul { margin-top: 8px; padding-left: 18px; }
     .cover { border-bottom: 2px solid #dbeafe; margin-bottom: 24px; padding-bottom: 18px; }
     .cover p { color: #475569; margin: 4px 0; }
+    .cover-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 18px; }
+    .cover-metric { border: 1px solid #dbe3ef; border-radius: 8px; background: #f8fafc; padding: 10px; }
+    .cover-metric span { color: #64748b; display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .cover-metric strong { color: #0f172a; display: block; font-size: 15px; margin-top: 4px; overflow-wrap: anywhere; }
     .summary { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px; }
     .report-section { break-inside: avoid; page-break-inside: avoid; }
     .chart-wrap { margin-top: 14px; overflow: hidden; }
@@ -1993,6 +2069,7 @@ export default function Home() {
     @media print {
       body { margin: 24px; }
       button { display: none; }
+      .cover-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .report-section { break-inside: avoid; page-break-inside: avoid; }
       .report-chart, .chart-wrap, .quality-summary-chart { break-inside: avoid; page-break-inside: avoid; }
     }
@@ -2002,8 +2079,14 @@ export default function Home() {
   <button onclick="window.print()">Save as PDF</button>
   <div class="cover">
     <h1>Social Data Explorer Research Report</h1>
-    <p>${escapeHtml(fileName || "Untitled dataset")}</p>
-    <p>Generated from the current filtered dataset on ${new Date().toLocaleDateString()}.</p>
+    <p><strong>Dataset:</strong> ${escapeHtml(fileName || "Untitled dataset")}</p>
+    <p>Generated with Social Data Explorer on ${escapeHtml(reportDate)} from the current filtered dataset.</p>
+    <div class="cover-grid">
+      <div class="cover-metric"><span>Rows</span><strong>${filteredRows.length.toLocaleString()}</strong></div>
+      <div class="cover-metric"><span>Columns</span><strong>${columns.length.toLocaleString()}</strong></div>
+      <div class="cover-metric"><span>Completeness</span><strong>${dataQuality.completeness.toFixed(1)}%</strong></div>
+      <div class="cover-metric"><span>Detected type</span><strong>${escapeHtml(detectedDatasetType)}</strong></div>
+    </div>
   </div>
   ${section("Executive Summary", `<p class="summary">${escapeHtml(executiveSummary)}</p>`)}
   ${section("Dataset Overview", list(overviewItems))}
@@ -2463,7 +2546,7 @@ export default function Home() {
                       <InsightCard
                         detail={
                           suspiciousColumns.some((profile) => profile.reasons.some((reason) => reason.includes("identifier")))
-                            ? "Some columns are unique in every row and may be identifiers."
+                            ? "Some columns look like identifiers based on name patterns or very high uniqueness."
                             : "No likely identifier columns flagged by uniqueness checks."
                         }
                         label="Potential IDs"
