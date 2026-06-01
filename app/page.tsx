@@ -447,6 +447,32 @@ function numericSummary(rows: DataRow[], column: string) {
   };
 }
 
+function percentile(values: number[], percentileValue: number) {
+  if (!values.length) {
+    return null;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = (sorted.length - 1) * percentileValue;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const weight = index - lower;
+
+  return lower === upper ? sorted[lower] : sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
+function getPercentiles(rows: DataRow[], column: string) {
+  const values = column ? getNumericValues(rows, column) : [];
+
+  return {
+    p10: percentile(values, 0.1),
+    p25: percentile(values, 0.25),
+    p50: percentile(values, 0.5),
+    p75: percentile(values, 0.75),
+    p90: percentile(values, 0.9),
+  };
+}
+
 function averageByGroup(rows: DataRow[], groupColumn: string, valueColumn: string) {
   if (!groupColumn || !valueColumn) {
     return [];
@@ -497,6 +523,37 @@ function ageDistribution(rows: DataRow[], ageColumn: string) {
   return ["Under 18", "18-29", "30-44", "45-59", "60+"]
     .map((label) => ({ count: counts.get(label) ?? 0, label, percent: rows.length ? ((counts.get(label) ?? 0) / rows.length) * 100 : 0 }))
     .filter((item) => item.count > 0);
+}
+
+function populationPyramid(rows: DataRow[], ageColumn: string, sexColumn: string) {
+  if (!ageColumn || !sexColumn) {
+    return [];
+  }
+
+  const bands = ["Under 18", "18-29", "30-44", "45-59", "60+"];
+  const totals = rows.reduce((map, row) => {
+    const age = row[ageColumn];
+    const sex = row[sexColumn];
+
+    if (typeof age !== "number" || sex === null || sex === undefined) {
+      return map;
+    }
+
+    const band = ageBand(age);
+    const sexKey = String(sex);
+    const current = map.get(band) ?? new Map<string, number>();
+    current.set(sexKey, (current.get(sexKey) ?? 0) + 1);
+    map.set(band, current);
+    return map;
+  }, new Map<string, Map<string, number>>());
+  const sexLabels = Array.from(new Set(rows.map((row) => row[sexColumn]).filter((value) => value !== null).map(String))).slice(0, 2);
+  const maxCount = Math.max(1, ...Array.from(totals.values()).flatMap((item) => Array.from(item.values())));
+
+  return bands.map((band) => ({
+    band,
+    left: { count: totals.get(band)?.get(sexLabels[0] ?? "") ?? 0, label: sexLabels[0] ?? "Group A", width: ((totals.get(band)?.get(sexLabels[0] ?? "") ?? 0) / maxCount) * 100 },
+    right: { count: totals.get(band)?.get(sexLabels[1] ?? "") ?? 0, label: sexLabels[1] ?? "Group B", width: ((totals.get(band)?.get(sexLabels[1] ?? "") ?? 0) / maxCount) * 100 },
+  }));
 }
 
 function rowMatchesSearch(row: DataRow, columns: string[], query: string) {
@@ -1058,9 +1115,13 @@ export default function Home() {
   const ageSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.age), [filteredRows, surveyVariables.age]);
   const householdSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.household), [filteredRows, surveyVariables.household]);
   const incomeSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
+  const incomePercentiles = useMemo(() => getPercentiles(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
   const ageBands = useMemo(() => ageDistribution(filteredRows, surveyVariables.age), [filteredRows, surveyVariables.age]);
+  const pyramidRows = useMemo(() => populationPyramid(filteredRows, surveyVariables.age, surveyVariables.sex), [filteredRows, surveyVariables.age, surveyVariables.sex]);
   const sexDistribution = useMemo(() => frequency(filteredRows, surveyVariables.sex), [filteredRows, surveyVariables.sex]);
   const employmentDistribution = useMemo(() => frequency(filteredRows, surveyVariables.employment), [filteredRows, surveyVariables.employment]);
+  const householdDistribution = useMemo(() => frequency(filteredRows, surveyVariables.household), [filteredRows, surveyVariables.household]);
+  const occupationDistribution = useMemo(() => frequency(filteredRows, surveyVariables.occupation), [filteredRows, surveyVariables.occupation]);
   const educationDistribution = useMemo(() => frequency(filteredRows, surveyVariables.education), [filteredRows, surveyVariables.education]);
   const regionDistribution = useMemo(() => frequency(filteredRows, surveyVariables.region), [filteredRows, surveyVariables.region]);
   const incomeBySex = useMemo(() => averageByGroup(filteredRows, surveyVariables.sex, surveyVariables.income), [filteredRows, surveyVariables.income, surveyVariables.sex]);
@@ -1068,6 +1129,79 @@ export default function Home() {
     () => averageByGroup(filteredRows, surveyVariables.employment, surveyVariables.income),
     [filteredRows, surveyVariables.employment, surveyVariables.income],
   );
+  const topBottomIncome = useMemo(() => {
+    const values = surveyVariables.income ? getNumericValues(filteredRows, surveyVariables.income).sort((a, b) => a - b) : [];
+    const groupSize = Math.max(1, Math.ceil(values.length * 0.2));
+    const bottom = values.slice(0, groupSize);
+    const top = values.slice(-groupSize);
+
+    return {
+      bottomAverage: bottom.length ? mean(bottom) : null,
+      topAverage: top.length ? mean(top) : null,
+    };
+  }, [filteredRows, surveyVariables.income]);
+  const overviewInterpretation = useMemo(() => {
+    const detectedCount = surveyDetectionList.filter((detection) => detection.column).length;
+    const quality = dataQuality.completeness >= 95 ? "high completeness" : dataQuality.completeness >= 85 ? "moderate completeness" : "notable missingness";
+    return `The current filtered view contains ${filteredRows.length.toLocaleString()} records across ${columns.length.toLocaleString()} variables. ${detectedCount.toLocaleString()} survey concepts were detected, and the dataset has ${quality}, so it is ready for a first-pass profile before deeper modelling.`;
+  }, [columns.length, dataQuality.completeness, filteredRows.length, surveyDetectionList]);
+  const populationInterpretation = useMemo(() => {
+    if (!ageSummary && !sexDistribution.length && !householdDistribution.length) {
+      return "Population interpretation is limited because age, sex/gender, and household variables were not detected. Rename or map these fields to unlock demographic profiling.";
+    }
+
+    const ageText = ageSummary
+      ? ageSummary.median !== null && ageSummary.median < 35
+        ? `The sample is relatively young, with a median age of ${formatValue(ageSummary.median)}.`
+        : ageSummary.median !== null && ageSummary.median > 55
+          ? `The sample skews older, with a median age of ${formatValue(ageSummary.median)}.`
+          : `The sample has a balanced adult age structure, with a median age of ${formatValue(ageSummary?.median)}.`
+      : "Age structure could not be interpreted because no age variable was detected.";
+    const sexText = sexDistribution[0] ? `The largest sex/gender group is ${sexDistribution[0].label}, representing ${sexDistribution[0].percent.toFixed(0)}% of analysed records.` : "";
+    const householdText = householdSummary ? `Average household size is ${formatValue(householdSummary.average)}, which helps contextualize dependents and living arrangements.` : "";
+
+    return [ageText, sexText, householdText].filter(Boolean).join(" ");
+  }, [ageSummary, householdDistribution.length, householdSummary, sexDistribution]);
+  const incomeInterpretation = useMemo(() => {
+    if (!incomeSummary) {
+      return "Income interpretation is unavailable until an individual or household income variable is detected.";
+    }
+
+    const skewText =
+      incomeSummary.average !== null && incomeSummary.median !== null && incomeSummary.average > incomeSummary.median * 1.25
+        ? "The income distribution is right-skewed, with a smaller group earning substantially above the median."
+        : "The mean and median are relatively close, suggesting the income distribution is not extremely skewed in the filtered data.";
+    const spreadText =
+      incomePercentiles.p90 !== null && incomePercentiles.p10 !== null
+        ? `The distance between P10 (${formatValue(incomePercentiles.p10)}) and P90 (${formatValue(incomePercentiles.p90)}) gives a quick view of income spread.`
+        : "";
+
+    return `${skewText} Median income is ${formatValue(incomeSummary.median)}. ${spreadText}`;
+  }, [incomePercentiles.p10, incomePercentiles.p90, incomeSummary]);
+  const labourInterpretation = useMemo(() => {
+    if (!employmentDistribution.length) {
+      return "Labour interpretation is limited because no employment-status variable was detected.";
+    }
+
+    const occupationText = occupationDistribution.length
+      ? `Occupation is distributed across ${occupationDistribution.length.toLocaleString()} categories, led by ${occupationDistribution[0].label}.`
+      : "Occupation was not detected, so the labour profile focuses on employment status only.";
+
+    return `Employment is concentrated in ${employmentDistribution[0].label}, which accounts for ${employmentDistribution[0].percent.toFixed(0)}% of analysed records. ${occupationText}`;
+  }, [employmentDistribution, occupationDistribution]);
+  const dataQualityInterpretation = useMemo(() => {
+    const missingWarning = missingProfiles.filter((profile) => profile.completeness < 90);
+    const duplicateText =
+      dataQuality.duplicateRows > 0
+        ? `${dataQuality.duplicateRows.toLocaleString()} duplicate row${dataQuality.duplicateRows === 1 ? "" : "s"} should be reviewed before estimating counts or shares.`
+        : "No duplicate rows were detected.";
+    const missingText =
+      missingWarning.length > 0
+        ? `${missingWarning.length.toLocaleString()} variable${missingWarning.length === 1 ? " contains" : "s contain"} more than 10% missing values and should be reviewed before analysis.`
+        : "No variables exceed the 10% missingness warning threshold.";
+
+    return `${missingText} ${duplicateText}`;
+  }, [dataQuality.duplicateRows, missingProfiles]);
   const regression = useMemo(() => linearRegression(filteredRows, selectedX, selectedY), [filteredRows, selectedX, selectedY]);
   const plotData = useMemo(
     () =>
@@ -1147,7 +1281,7 @@ export default function Home() {
 
   function loadSample() {
     setRows(SAMPLE_ROWS);
-    setFileName("sample-demography.csv");
+    setFileName("sample-social-survey.csv");
     setActiveTab("report");
     setFilters({});
     setFiltersOpen(false);
@@ -1177,13 +1311,28 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `demography-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `social-data-export-${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
 
   const hasData = rows.length > 0;
   const chartReady = numericColumns.length >= (chartType === "histogram" ? 1 : 2) && filteredRows.length > 0;
+  const visualizationInterpretation = useMemo(() => {
+    if (!chartReady) {
+      return "Choose numeric variables to generate a chart interpretation.";
+    }
+
+    if (chartType === "histogram") {
+      return `This histogram helps assess the distribution of ${selectedX}, including concentration, spread, and potential outliers.`;
+    }
+
+    if (chartType === "scatter" && regression) {
+      return `The scatterplot compares ${selectedX} and ${selectedY}. The linear trend is ${regression.slope >= 0 ? "positive" : "negative"}, with R² of ${regression.r2.toFixed(2)}.`;
+    }
+
+    return `This ${chartType} chart compares ${selectedX} and ${selectedY} across the current filtered dataset. Use grouping to check whether patterns differ by region, cohort, or social category.`;
+  }, [chartReady, chartType, regression, selectedX, selectedY]);
 
   return (
     <main className="relative min-h-screen overflow-hidden px-3 py-6 text-slate-100 sm:px-6 lg:px-10">
@@ -1192,12 +1341,12 @@ export default function Home() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 sm:gap-6">
         <header className="flex flex-col items-center gap-3 py-4 text-center sm:py-5">
           <div className="rounded-full border border-blue-200/25 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-blue-100">
-            Demography Research Studio
+            Social Data Studio
           </div>
           <div className="max-w-4xl">
-            <h1 className="text-3xl font-semibold tracking-normal text-white sm:text-5xl">Demography Explorer</h1>
+            <h1 className="text-3xl font-semibold tracking-normal text-white sm:text-5xl">Social Data Explorer</h1>
             <p className="mt-3 text-base leading-7 text-slate-300 sm:text-lg">
-              Upload social survey microdata and get demographic, income, labour, and data quality interpretation in a clear client-side workspace.
+              Explore, profile and understand social survey datasets.
             </p>
           </div>
         </header>
@@ -1358,6 +1507,17 @@ export default function Home() {
                 </GlassPanel>
 
                 <GlassPanel className="p-5">
+                  <p className="report-section-label">Research Assistant</p>
+                  <h3 className="text-lg font-semibold text-white">Suggested Analyses</h3>
+                  <div className="suggested-grid mt-4">
+                    <button onClick={() => setActiveTab("income")} type="button">Compare income by sex</button>
+                    <button onClick={() => setActiveTab("population")} type="button">Analyse age structure</button>
+                    <button onClick={() => setActiveTab("labour")} type="button">Explore labour categories</button>
+                    <button onClick={() => setActiveTab("quality")} type="button">Review missing values</button>
+                  </div>
+                </GlassPanel>
+
+                <GlassPanel className="p-5">
                   <p className="report-section-label">Section 1</p>
                   <h3 className="text-lg font-semibold text-white">Dataset Overview</h3>
                   <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
@@ -1433,7 +1593,7 @@ export default function Home() {
 
                   <GlassPanel className="p-5">
                     <p className="report-section-label">Section 2</p>
-                    <h3 className="text-lg font-semibold text-white">Survey Variable Detection</h3>
+                    <h3 className="text-lg font-semibold text-white">Detected Survey Variables</h3>
                     <div className="report-detection-groups mt-4">
                       {REPORT_DETECTION_GROUPS.map((group) => (
                         <div className="report-detection-group" key={group.title}>
@@ -1458,7 +1618,7 @@ export default function Home() {
 
                 <GlassPanel className="p-5">
                   <p className="report-section-label">Section 3</p>
-                  <h3 className="text-lg font-semibold text-white">Variable profiles</h3>
+                  <h3 className="text-lg font-semibold text-white">Variable Profiles</h3>
                   <p className="mt-1 text-sm text-slate-400">
                     A compact profile for each variable, including completeness, unique values, numeric statistics, and mini distributions.
                   </p>
@@ -1503,7 +1663,8 @@ export default function Home() {
                 <div className="grid gap-5 xl:grid-cols-2">
                   <GlassPanel className="p-5">
                     <p className="report-section-label">Section 4</p>
-                    <h3 className="text-lg font-semibold text-white">Columns with most missing values</h3>
+                    <h3 className="text-lg font-semibold text-white">Data Quality Warnings</h3>
+                    <p className="mt-1 text-sm text-slate-400">Columns with the highest missingness and other checks that may affect interpretation.</p>
                     <div className="mt-4 space-y-3">
                       {missingProfiles.length ? (
                         missingProfiles.slice(0, 8).map((profile) => (
@@ -1570,7 +1731,7 @@ export default function Home() {
 
                 <GlassPanel className="p-5">
                   <p className="report-section-label">Section 5</p>
-                  <h3 className="text-lg font-semibold text-white">Recommended analyses</h3>
+                  <h3 className="text-lg font-semibold text-white">Recommended Analyses</h3>
                   <div className="mt-4 grid gap-3 lg:grid-cols-2">
                     {recommendedAnalyses.map((recommendation) => (
                       <InsightCard detail={recommendation} key={recommendation} label="Next step" />
@@ -1609,6 +1770,9 @@ export default function Home() {
                 <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
                   <GlassPanel className="p-5">
                     <h2 className="text-xl font-semibold text-white">Dashboard summary</h2>
+                    <div className="mt-4">
+                      <InsightCard detail={overviewInterpretation} label="Interpretation" />
+                    </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       <InsightCard
                         detail={
@@ -1688,6 +1852,9 @@ export default function Home() {
                   <p className="mt-1 text-sm text-slate-400">
                     The app scans survey variables for age, sex or gender, region, education, household size, and children to describe the population under study.
                   </p>
+                  <div className="mt-4">
+                    <InsightCard detail={populationInterpretation} label="Interpretation" />
+                  </div>
                   <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="metric-tile">
                       <span>Analysed records</span>
@@ -1709,9 +1876,32 @@ export default function Home() {
                 </GlassPanel>
 
                 <div className="grid gap-5 xl:grid-cols-2">
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Population Pyramid</h3>
+                    <p className="mt-1 text-sm text-slate-400">Age bands split by detected sex/gender variable.</p>
+                    <div className="population-pyramid mt-5">
+                      {pyramidRows.some((row) => row.left.count || row.right.count) ? (
+                        pyramidRows.map((row) => (
+                          <div className="pyramid-row" key={row.band}>
+                            <div className="pyramid-side left"><i style={{ width: `${row.left.width}%` }} /><span>{row.left.count || ""}</span></div>
+                            <strong>{row.band}</strong>
+                            <div className="pyramid-side right"><i style={{ width: `${row.right.width}%` }} /><span>{row.right.count || ""}</span></div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-500">Detect age and sex/gender variables to render a pyramid.</p>
+                      )}
+                    </div>
+                    {pyramidRows.length > 0 && (
+                      <p className="mt-3 text-xs text-slate-500">
+                        Left: {pyramidRows[0]?.left.label} / Right: {pyramidRows[0]?.right.label}
+                      </p>
+                    )}
+                  </GlassPanel>
                   <FrequencyList items={ageBands} title={`Age structure${surveyVariables.age ? ` (${surveyVariables.age})` : ""}`} />
                   <FrequencyList items={sexDistribution} title={`Sex / gender${surveyVariables.sex ? ` (${surveyVariables.sex})` : ""}`} />
                   <FrequencyList items={regionDistribution} title={`Geography${surveyVariables.region ? ` (${surveyVariables.region})` : ""}`} />
+                  <FrequencyList items={householdDistribution} title={`Household structure${surveyVariables.household ? ` (${surveyVariables.household})` : ""}`} />
                   <FrequencyList items={educationDistribution} title={`Education${surveyVariables.education ? ` (${surveyVariables.education})` : ""}`} />
                 </div>
               </div>
@@ -1724,6 +1914,9 @@ export default function Home() {
                   <p className="mt-1 text-sm text-slate-400">
                     Income variables are detected from labels such as income, earnings, wage, salary, or pay. Group comparisons use available sex/gender and labour variables.
                   </p>
+                  <div className="mt-4">
+                    <InsightCard detail={incomeInterpretation} label="Interpretation" />
+                  </div>
                   <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="metric-tile">
                       <span>Income variable</span>
@@ -1743,6 +1936,40 @@ export default function Home() {
                     </div>
                   </div>
                 </GlassPanel>
+
+                <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Income Distribution</h3>
+                    {surveyVariables.income ? (
+                      <div className="mt-4">
+                        <MiniBars values={getNumericValues(filteredRows, surveyVariables.income)} />
+                      </div>
+                    ) : (
+                      <EmptyState title="No income distribution yet" detail="Detect an income variable to render a distribution." />
+                    )}
+                  </GlassPanel>
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Income Percentiles</h3>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-5">
+                      {[
+                        ["P10", incomePercentiles.p10],
+                        ["P25", incomePercentiles.p25],
+                        ["P50", incomePercentiles.p50],
+                        ["P75", incomePercentiles.p75],
+                        ["P90", incomePercentiles.p90],
+                      ].map(([label, value]) => (
+                        <div className="metric-tile" key={String(label)}>
+                          <span>{label}</span>
+                          <strong>{formatValue(value as CellValue)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <InsightCard detail={`Bottom group average: ${formatValue(topBottomIncome.bottomAverage)}`} label="Bottom 20%" />
+                      <InsightCard detail={`Top group average: ${formatValue(topBottomIncome.topAverage)}`} label="Top 20%" />
+                    </div>
+                  </GlassPanel>
+                </div>
 
                 <div className="grid gap-5 xl:grid-cols-2">
                   <GlassPanel className="p-5">
@@ -1781,6 +2008,9 @@ export default function Home() {
                   <p className="mt-1 text-sm text-slate-400">
                     Labour variables are detected from employment, work status, labour, occupation, job status, and similar field names.
                   </p>
+                  <div className="mt-4">
+                    <InsightCard detail={labourInterpretation} label="Interpretation" />
+                  </div>
                   <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <div className="metric-tile">
                       <span>Labour variable</span>
@@ -1802,7 +2032,29 @@ export default function Home() {
                 </GlassPanel>
                 <div className="grid gap-5 xl:grid-cols-2">
                   <FrequencyList items={employmentDistribution} title="Employment status distribution" />
+                  <FrequencyList items={occupationDistribution} title="Occupational categories" />
                   <FrequencyList items={educationDistribution} title="Education profile for labour context" />
+                  <GlassPanel className="p-5">
+                    <h3 className="text-lg font-semibold text-white">Labour Market Profile</h3>
+                    <div className="mt-4 grid gap-3">
+                      <InsightCard
+                        detail={
+                          employmentDistribution[0]
+                            ? `${employmentDistribution[0].label} is the largest labour category (${employmentDistribution[0].percent.toFixed(0)}% of analysed records).`
+                            : "No labour status variable detected."
+                        }
+                        label="Largest status"
+                      />
+                      <InsightCard
+                        detail={
+                          surveyVariables.occupation
+                            ? `${occupationDistribution.length.toLocaleString()} occupational categories are represented.`
+                            : "No occupation variable detected."
+                        }
+                        label="Occupation coverage"
+                      />
+                    </div>
+                  </GlassPanel>
                 </div>
               </div>
             )}
@@ -1937,6 +2189,9 @@ export default function Home() {
                   <p className="mt-1 text-sm text-slate-400">
                     Review whether the survey file is ready for demographic analysis before interpreting substantive patterns.
                   </p>
+                  <div className="mt-4">
+                    <InsightCard detail={dataQualityInterpretation} label="Interpretation" tone={dataQuality.completeness < 90 || dataQuality.duplicateRows > 0 ? "warning" : "default"} />
+                  </div>
                   <div className="mt-5">
                     <div className="flex items-end justify-between gap-4">
                       <div>
@@ -2005,6 +2260,9 @@ export default function Home() {
                     </p>
                     <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
                       Tip: the color field is optional. Use it for regions, cohorts, or other groups when you want separate series.
+                    </div>
+                    <div className="mt-4">
+                      <InsightCard detail={visualizationInterpretation} label="Interpretation" />
                     </div>
                   </div>
                   <div className="chart-controls">
@@ -2081,6 +2339,12 @@ export default function Home() {
                   <div>
                     <h2 className="text-xl font-semibold text-white">Data preview</h2>
                     <p className="mt-1 text-sm text-slate-400">Sort headers and inspect the filtered view without leaving the browser.</p>
+                    <div className="mt-4 max-w-2xl">
+                      <InsightCard
+                        detail={`The preview shows the first ${Math.min(filteredRows.length, 150).toLocaleString()} matching records, helping verify coding, labels, missing values, and unexpected categories before analysis.`}
+                        label="Interpretation"
+                      />
+                    </div>
                   </div>
                   <button className="quiet-button self-start lg:self-auto" onClick={() => setFiltersOpen((current) => !current)} type="button">
                     {filtersOpen ? "Hide filters" : "Show filters"}
@@ -2138,6 +2402,12 @@ export default function Home() {
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
                       Export uses the current filters and sort order. No backend is involved; the CSV is generated directly in this browser session.
                     </p>
+                    <div className="mt-4 max-w-2xl">
+                      <InsightCard
+                        detail={`Export will include ${filteredRows.length.toLocaleString()} records and ${columns.length.toLocaleString()} variables after the current search, filters, and sort are applied.`}
+                        label="Interpretation"
+                      />
+                    </div>
                     <div className="mt-6 flex flex-wrap gap-3">
                       <button className="primary-button" onClick={exportCsv} type="button">
                         Download filtered CSV

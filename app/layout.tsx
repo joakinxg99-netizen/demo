@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Demography Explorer",
-  description: "Upload, filter, chart, and export demographic datasets.",
+  title: "Social Data Explorer",
+  description: "Explore, profile and understand social survey datasets.",
 };
 
 export default function RootLayout({
