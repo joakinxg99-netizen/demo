@@ -12,6 +12,13 @@ type SortState = { column: string; direction: "asc" | "desc" } | null;
 type TabKey = "report" | "overview" | "population" | "income" | "labour" | "insights" | "quality" | "visualization" | "preview" | "export";
 type ChartType = "scatter" | "bar" | "line" | "histogram";
 type QualitySeverity = "critical" | "warning" | "information";
+type QualityIssue = {
+  affectedColumns?: string[];
+  column: string;
+  detail: string;
+  severity: QualitySeverity;
+  title: string;
+};
 type SuggestedAnalysisKey = "incomeBySex" | "ageStructure" | "labourCategories" | "missingValues";
 type VisualizationMode =
   | "populationPyramid"
@@ -172,6 +179,22 @@ const EPH_VALUE_LABELS: Record<string, Record<string, string>> = {
   },
 };
 
+const EPH_VARIABLE_LABELS: Record<string, string> = {
+  aglomerado: "Region / urban area",
+  ano4: "Year",
+  cat_ocup: "Occupation category",
+  ch04: "Sex / Gender",
+  ch06: "Age",
+  codusu: "Household ID",
+  componente: "Person ID",
+  estado: "Employment status",
+  ipcf: "Household income per capita",
+  nivel_ed: "Education level",
+  nro_hogar: "Household number",
+  p47t: "Individual income",
+  trimestre: "Quarter",
+};
+
 const SURVEY_CONCEPTS: Record<
   SurveyVariableKey,
   {
@@ -206,7 +229,7 @@ const SURVEY_CONCEPTS: Record<
   householdIncome: {
     aliases: ["household_income", "family_income", "household_per_capita_income", "per_capita_income", "ipcf", "ingreso_hogar", "renda_domiciliar", "renda_familiar"],
     ephAliases: ["ipcf"],
-    friendlyLabel: "Household income",
+    friendlyLabel: "Household income per capita",
     keywords: ["household_income", "family_income", "per_capita", "ingreso_hogar", "renda_domiciliar", "renda_familiar"],
     partials: ["household_income", "family_income", "per_capita_income", "ipcf", "ingreso_hogar", "renda_domiciliar"],
   },
@@ -220,28 +243,28 @@ const SURVEY_CONCEPTS: Record<
   occupation: {
     aliases: ["occupation", "occupational_category", "occupation_category", "job_type", "ocupacion", "ocupação", "ocupacao", "cat_ocup"],
     ephAliases: ["cat_ocup"],
-    friendlyLabel: "Occupation",
+    friendlyLabel: "Occupation category",
     keywords: ["occupation", "ocupacion", "ocupacao", "ocupação", "job_type"],
     partials: ["occupation", "occupational", "ocupacion", "ocupacao", "cat_ocup"],
   },
   education: {
     aliases: ["education", "education_level", "educ", "schooling", "qualification", "educacion", "educación", "educacao", "educação", "nivel_ed"],
     ephAliases: ["nivel_ed"],
-    friendlyLabel: "Education",
+    friendlyLabel: "Education level",
     keywords: ["education", "educ", "school", "educacion", "educacao", "nivel"],
     partials: ["education_level", "schooling", "qualification", "educacion", "educacao", "nivel_ed"],
   },
   region: {
     aliases: ["region", "state", "province", "county", "district", "area", "location", "provincia", "regiao", "região", "uf", "estado", "aglomerado"],
     ephAliases: ["aglomerado"],
-    friendlyLabel: "Region / geography",
+    friendlyLabel: "Region / urban area",
     keywords: ["region", "state", "province", "provincia", "regiao", "uf", "district", "area", "location", "aglomerado"],
     partials: ["region", "province", "provincia", "regiao", "location", "aglomerado"],
   },
   householdSize: {
-    aliases: ["household_size", "hh_size", "family_size", "household_members", "tam_hogar", "tamanho_domicilio", "domicilio", "hogar"],
+    aliases: ["household_size", "hh_size", "family_size", "household_members", "members_in_household", "persons_in_household", "tam_hogar", "tamanho_domicilio"],
     friendlyLabel: "Household size",
-    keywords: ["household", "family", "hogar", "domicilio", "domicílio"],
+    keywords: ["household_size", "hh_size", "family_size", "members", "persons", "tam_hogar"],
     partials: ["household_size", "hh_size", "family_size", "household_members", "tam_hogar", "tamanho_domicilio"],
   },
   children: {
@@ -267,7 +290,7 @@ const SURVEY_CONCEPTS: Record<
   householdId: {
     aliases: ["household_id", "hh_id", "household_sample_id", "sample_id", "codusu", "nro_hogar", "id_hogar", "id_domicilio"],
     ephAliases: ["nro_hogar", "codusu"],
-    friendlyLabel: "Household ID",
+    friendlyLabel: "Household number",
     keywords: ["household_id", "hh_id", "sample_id", "codusu", "hogar", "domicilio"],
     partials: ["household_id", "hh_id", "sample_id", "codusu", "nro_hogar", "id_hogar"],
   },
@@ -426,13 +449,18 @@ function isPotentialIdentifier(profile: ColumnProfile, rowCount: number, analyti
 function scoreColumnForConcept(column: string, concept: SurveyVariableKey): SurveyDetection | null {
   const definition = SURVEY_CONCEPTS[concept];
   const normalized = normalizeColumnName(column);
+  const ephFriendlyLabel = EPH_VARIABLE_LABELS[normalized];
   const aliases = definition.aliases.map(normalizeColumnName);
   const ephAliases = (definition.ephAliases ?? []).map(normalizeColumnName);
   const partials = definition.partials.map(normalizeColumnName);
   const keywords = definition.keywords.map(normalizeColumnName);
 
+  if (concept === "householdSize" && ["nro_hogar", "codusu", "componente"].includes(normalized)) {
+    return null;
+  }
+
   if (ephAliases.includes(normalized)) {
-    return { column, concept, confidence: 100, friendlyLabel: definition.friendlyLabel, method: "EPH alias" };
+    return { column, concept, confidence: 100, friendlyLabel: ephFriendlyLabel ?? definition.friendlyLabel, method: "EPH alias" };
   }
 
   if (aliases.includes(normalized)) {
@@ -480,11 +508,45 @@ function getSurveyVariables(detections: Record<SurveyVariableKey, SurveyDetectio
     education: detections.education.column,
     employment: detections.employment.column,
     household: detections.householdSize.column,
+    householdId: detections.householdId.column,
     income: detections.individualIncome.column || detections.householdIncome.column,
     occupation: detections.occupation.column,
+    personId: detections.personId.column,
     region: detections.region.column,
     sex: detections.sex.column,
   };
+}
+
+function getEphColumn(columns: string[], normalizedName: string) {
+  return columns.find((column) => normalizeColumnName(column) === normalizedName) ?? "";
+}
+
+function getDerivedHouseholdSizes(rows: DataRow[], columns: string[]) {
+  const sampleIdColumn = getEphColumn(columns, "codusu");
+  const householdNumberColumn = getEphColumn(columns, "nro_hogar");
+  const personColumn = getEphColumn(columns, "componente");
+
+  if (!sampleIdColumn || !householdNumberColumn || !personColumn) {
+    return [];
+  }
+
+  const householdMembers = rows.reduce((map, row) => {
+    const sampleId = row[sampleIdColumn];
+    const householdNumber = row[householdNumberColumn];
+    const person = row[personColumn];
+
+    if (sampleId === null || householdNumber === null || person === null) {
+      return map;
+    }
+
+    const key = `${String(sampleId)}::${String(householdNumber)}`;
+    const members = map.get(key) ?? new Set<string>();
+    members.add(String(person));
+    map.set(key, members);
+    return map;
+  }, new Map<string, Set<string>>());
+
+  return Array.from(householdMembers.values()).map((members) => members.size).filter((value) => value > 0);
 }
 
 function translateSurveyValue(column: string, value: string) {
@@ -1166,7 +1228,7 @@ export default function Home() {
           column: detection.column,
           concept: detection.concept,
           confidence: detection.confidence,
-          friendlyName: detection.friendlyLabel,
+          friendlyName: EPH_VARIABLE_LABELS[normalizeColumnName(detection.column)] ?? detection.friendlyLabel,
           method: detection.method,
         })),
     [surveyDetectionList],
@@ -1176,7 +1238,7 @@ export default function Home() {
     [variableDictionary],
   );
   const friendlyColumnName = useCallback(
-    (column: string) => formatResearchLabel(columnFriendlyLabels.get(column) ?? column),
+    (column: string) => formatResearchLabel(EPH_VARIABLE_LABELS[normalizeColumnName(column)] ?? columnFriendlyLabels.get(column) ?? column),
     [columnFriendlyLabels],
   );
   const detectedAnalyticalColumns = useMemo(
@@ -1235,18 +1297,20 @@ export default function Home() {
     [columnProfiles, detectedAnalyticalColumns, rows.length, surveyVariables],
   );
   const dataQualityIssues = useMemo(() => {
-    const issues: { column: string; detail: string; severity: QualitySeverity; title: string }[] = [];
+    const issues: QualityIssue[] = [];
+    const mixedColumns = columnProfiles.filter((profile) => profile.type === "mixed").map((profile) => profile.column);
+
+    if (mixedColumns.length) {
+      issues.push({
+        affectedColumns: mixedColumns,
+        column: "Mixed columns",
+        detail: `${mixedColumns.length.toLocaleString()} columns contain mixed numeric/text values. Review recommended before statistical modeling.`,
+        severity: "warning",
+        title: "Mixed type columns",
+      });
+    }
 
     columnProfiles.forEach((profile) => {
-      if (profile.type === "mixed") {
-        issues.push({
-          column: profile.column,
-          detail: "Mixed numeric/text values can break statistical summaries and should be recoded.",
-          severity: "critical",
-          title: "Mixed type column",
-        });
-      }
-
       if (profile.column === surveyVariables.age && profile.max !== null && profile.max > 120) {
         issues.push({
           column: profile.column,
@@ -1269,7 +1333,7 @@ export default function Home() {
         issues.push({
           column: profile.column,
           detail: `${profile.missing.toLocaleString()} missing values; ${profile.completeness.toFixed(1)}% complete.`,
-          severity: "warning",
+          severity: profile.completeness < 50 ? "critical" : "warning",
           title: "Missing values above 10%",
         });
       }
@@ -1287,10 +1351,11 @@ export default function Home() {
     });
 
     if (dataQuality.duplicateRows > 0) {
+      const duplicateShare = rows.length ? (dataQuality.duplicateRows / rows.length) * 100 : 0;
       issues.push({
         column: "All columns",
         detail: `${dataQuality.duplicateRows.toLocaleString()} duplicate row${dataQuality.duplicateRows === 1 ? "" : "s"} detected.`,
-        severity: "warning",
+        severity: duplicateShare >= 10 ? "critical" : "warning",
         title: "Duplicate rows",
       });
     }
@@ -1336,6 +1401,7 @@ export default function Home() {
   }, [correlations, dataQuality.completeness, dataQuality.duplicateRows, friendlyColumnName, numericColumns.length, surveyDetections.quarter.column, surveyDetections.year.column, surveyVariables]);
 
   const executiveSummary = useMemo(() => {
+    const isEphDataset = detectedDatasetType === "Argentina EPH-style social survey";
     const detectedCore = [
       surveyVariables.age ? "age" : "",
       surveyVariables.sex ? "sex/gender" : "",
@@ -1349,18 +1415,39 @@ export default function Home() {
         : "No missing values were detected in the loaded cells.";
     const suitability =
       surveyVariables.age || surveyVariables.sex || surveyVariables.income || surveyVariables.employment
-        ? "The dataset appears suitable for demographic and social survey analysis."
+        ? "The dataset is suitable for exploratory demographic and labour-market analysis."
         : "The dataset can be explored, but core survey concepts were only partially detected.";
+    const codeNote = isEphDataset
+      ? "EPH variables are coded categories; results are exploratory and depend on correct interpretation of EPH category codes."
+      : "Results are exploratory and should be reviewed before formal statistical reporting.";
 
     return `This dataset contains ${rows.length.toLocaleString()} observations and ${columns.length.toLocaleString()} variables. Completeness is ${dataQuality.completeness.toFixed(1)}%. ${
       detectedCore.length ? `${detectedCore.join(", ")} ${detectedCore.length === 1 ? "was" : "were"} successfully detected.` : "No core demographic concepts were confidently detected."
-    } ${suitability} ${qualitySentence}`;
-  }, [columns.length, dataQuality.completeness, missingProfiles, rows.length, surveyVariables]);
+    } ${suitability} ${qualitySentence} ${codeNote}`;
+  }, [columns.length, dataQuality.completeness, detectedDatasetType, missingProfiles, rows.length, surveyVariables]);
 
   const selectedX = xColumn || numericColumns[0] || "";
   const selectedY = yColumn || numericColumns.find((column) => column !== selectedX) || numericColumns[0] || "";
   const ageSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.age), [filteredRows, surveyVariables.age]);
   const householdSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.household), [filteredRows, surveyVariables.household]);
+  const derivedHouseholdSizes = useMemo(() => getDerivedHouseholdSizes(filteredRows, columns), [columns, filteredRows]);
+  const derivedHouseholdSummary = useMemo(
+    () => {
+      if (!derivedHouseholdSizes.length) {
+        return null;
+      }
+
+      const sortedSizes = [...derivedHouseholdSizes].sort((a, b) => a - b);
+      const middle = Math.floor(sortedSizes.length / 2);
+      const medianSize = sortedSizes.length % 2 ? sortedSizes[middle] : (sortedSizes[middle - 1] + sortedSizes[middle]) / 2;
+
+      return {
+        average: mean(derivedHouseholdSizes),
+        median: medianSize,
+      };
+    },
+    [derivedHouseholdSizes],
+  );
   const incomeSummary = useMemo(() => numericSummary(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
   const incomeValues = useMemo(() => getNumericValues(filteredRows, surveyVariables.income), [filteredRows, surveyVariables.income]);
   const nonNegativeIncomeValues = useMemo(() => incomeValues.filter((value) => value >= 0), [incomeValues]);
@@ -1372,6 +1459,18 @@ export default function Home() {
   const sexDistribution = useMemo(() => frequency(filteredRows, surveyVariables.sex), [filteredRows, surveyVariables.sex]);
   const employmentDistribution = useMemo(() => frequency(filteredRows, surveyVariables.employment), [filteredRows, surveyVariables.employment]);
   const householdDistribution = useMemo(() => frequency(filteredRows, surveyVariables.household), [filteredRows, surveyVariables.household]);
+  const derivedHouseholdDistribution = useMemo(() => {
+    const counts = derivedHouseholdSizes.reduce((map, size) => {
+      const label = String(size);
+      map.set(label, (map.get(label) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>());
+    const total = derivedHouseholdSizes.length;
+
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ count, label, percent: total ? (count / total) * 100 : 0 }))
+      .sort((a, b) => Number(a.label) - Number(b.label));
+  }, [derivedHouseholdSizes]);
   const occupationDistribution = useMemo(() => frequency(filteredRows, surveyVariables.occupation), [filteredRows, surveyVariables.occupation]);
   const educationDistribution = useMemo(() => frequency(filteredRows, surveyVariables.education), [filteredRows, surveyVariables.education]);
   const regionDistribution = useMemo(() => frequency(filteredRows, surveyVariables.region), [filteredRows, surveyVariables.region]);
@@ -1409,10 +1508,16 @@ export default function Home() {
           : `The sample has a balanced adult age structure, with a median age of ${formatValue(ageSummary?.median)}.`
       : "Age structure could not be interpreted because no age variable was detected.";
     const sexText = sexDistribution[0] ? `The largest sex/gender group is ${sexDistribution[0].label}, representing ${sexDistribution[0].percent.toFixed(0)}% of analysed records.` : "";
-    const householdText = householdSummary ? `Average household size is ${formatValue(householdSummary.average)}, which helps contextualize dependents and living arrangements.` : "";
+    const householdText = derivedHouseholdSummary
+      ? `Household size was derived from household and person identifiers; the average household has ${formatValue(derivedHouseholdSummary.average)} members.`
+      : surveyVariables.householdId || surveyVariables.personId
+        ? "Household identifiers were detected, enabling household-level grouping."
+        : householdSummary
+          ? `Average household size is ${formatValue(householdSummary.average)}, which helps contextualize dependents and living arrangements.`
+          : "";
 
     return [ageText, sexText, householdText].filter(Boolean).join(" ");
-  }, [ageSummary, householdDistribution.length, householdSummary, sexDistribution]);
+  }, [ageSummary, derivedHouseholdSummary, householdDistribution.length, householdSummary, sexDistribution, surveyVariables.householdId, surveyVariables.personId]);
   const incomeInterpretation = useMemo(() => {
     if (!incomeSummary) {
       return "Income interpretation is unavailable until an individual or household income variable is detected.";
@@ -2130,8 +2235,17 @@ export default function Home() {
       `Completeness: ${dataQuality.completeness.toFixed(1)}%`,
     ];
     const detectedItems = variableDictionary.map((item) => `${item.column} -> ${item.friendlyName} (${item.confidence}%)`);
+    const formatIssueForReport = (issue: QualityIssue) => {
+      if (!issue.affectedColumns?.length) {
+        return `${issue.severity.toUpperCase()}: ${issue.title} - ${friendlyColumnName(issue.column)}: ${issue.detail}`;
+      }
+
+      const visibleColumns = issue.affectedColumns.slice(0, 10).map(friendlyColumnName).join(", ");
+      const moreCount = issue.affectedColumns.length - 10;
+      return `${issue.severity.toUpperCase()}: ${issue.title} - ${issue.detail} Affected columns: ${visibleColumns}${moreCount > 0 ? `, + ${moreCount.toLocaleString()} more` : ""}.`;
+    };
     const qualityItems = dataQualityIssues.length
-      ? dataQualityIssues.map((issue) => `${issue.severity.toUpperCase()}: ${issue.title} - ${friendlyColumnName(issue.column)}: ${issue.detail}`)
+      ? dataQualityIssues.map(formatIssueForReport)
       : ["No critical, warning, or information-level data quality issues detected."];
     const populationItems = [
       populationInterpretation,
@@ -2170,27 +2284,29 @@ export default function Home() {
   <title>Social Data Explorer Research Report</title>
   <style>
     * { box-sizing: border-box; }
-    body { background: #ffffff; color: #0f172a; font-family: Arial, sans-serif; line-height: 1.55; margin: 40px; }
+    @page { margin: 18mm 15mm 20mm; size: A4; }
+    body { background: #ffffff; color: #0f172a; font-family: Arial, sans-serif; line-height: 1.55; margin: 0; padding: 34px 40px 56px; }
     button { border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; cursor: pointer; font-weight: 700; margin-bottom: 20px; padding: 8px 12px; }
-    h1 { font-size: 30px; margin: 0 0 4px; }
-    h2 { border-top: 1px solid #cbd5e1; font-size: 18px; margin: 28px 0 12px; padding-top: 18px; }
+    h1 { color: #0f172a; font-size: 34px; letter-spacing: -0.01em; margin: 0 0 6px; }
+    h2 { border-top: 1px solid #dbe3ef; color: #0f172a; font-size: 19px; margin: 30px 0 12px; padding-top: 18px; }
     h3 { font-size: 15px; margin: 16px 0 8px; }
     p, li { font-size: 13px; }
     ul { margin-top: 8px; padding-left: 18px; }
-    .cover { border-bottom: 2px solid #dbeafe; margin-bottom: 24px; padding-bottom: 18px; }
+    .cover { border: 1px solid #dbe3ef; border-radius: 16px; background: linear-gradient(135deg, #eff6ff, #ffffff 58%, #f8fafc); margin-bottom: 24px; padding: 28px; }
     .cover p { color: #475569; margin: 4px 0; }
     .platform { color: #1e3a8a; font-size: 12px; font-weight: 800; letter-spacing: 0.08em; margin: 0 0 10px; text-transform: uppercase; }
     .cover-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 18px; }
-    .cover-metric { border: 1px solid #dbe3ef; border-radius: 8px; background: #f8fafc; padding: 10px; }
+    .cover-metric { border: 1px solid #dbe3ef; border-radius: 10px; background: rgba(255, 255, 255, 0.82); padding: 12px; }
     .cover-metric span { color: #64748b; display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .cover-metric strong { color: #0f172a; display: block; font-size: 15px; margin-top: 4px; overflow-wrap: anywhere; }
-    .summary { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px; }
+    .summary { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 14px; }
     .type-badge { display: inline-flex; border: 1px solid #bfdbfe; border-radius: 999px; background: #eff6ff; color: #1e3a8a; font-size: 12px; font-weight: 700; margin-top: 8px; padding: 4px 10px; }
     .narrative-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .narrative-card { border: 1px solid #dbe3ef; border-radius: 8px; background: #f8fafc; padding: 12px; }
+    .narrative-card { border: 1px solid #dbe3ef; border-radius: 10px; background: #f8fafc; padding: 12px; }
     .narrative-card strong { color: #0f172a; font-size: 13px; }
     .narrative-card p { color: #475569; margin: 6px 0 0; }
     .report-section { break-inside: avoid; page-break-inside: avoid; }
+    .report-section:nth-of-type(6), .report-section:nth-of-type(8) { break-before: page; page-break-before: always; }
     .chart-wrap { margin-top: 14px; overflow: hidden; }
     .report-chart { display: block; height: auto; max-width: 100%; width: 100%; }
     .chart-title { fill: #0f172a; font-size: 15px; font-weight: 700; }
@@ -2201,12 +2317,13 @@ export default function Home() {
     .quality-summary-chart { display: grid; gap: 12px; }
     .print-progress { height: 14px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
     .print-progress i { display: block; height: 100%; border-radius: inherit; background: #2563eb; }
+    .report-footer { position: fixed; right: 0; bottom: 0; left: 0; border-top: 1px solid #e2e8f0; background: #ffffff; color: #64748b; font-size: 10px; padding: 8px 40px; }
     @media print {
-      body { margin: 24px; }
+      body { margin: 0; padding: 0 0 36px; }
       button { display: none; }
       .cover-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .narrative-grid { grid-template-columns: 1fr; }
-      .report-section { break-inside: avoid; page-break-inside: avoid; }
+      .cover, .report-section { break-inside: avoid; page-break-inside: avoid; }
       .report-chart, .chart-wrap, .quality-summary-chart { break-inside: avoid; page-break-inside: avoid; }
     }
   </style>
@@ -2238,6 +2355,7 @@ export default function Home() {
   ${section("Labour Analysis", list(labourItems), `${barChart(employmentDistribution.map((item) => ({ label: item.label, value: item.count })), { title: "Employment Structure" })}${barChart(educationDistribution.map((item) => ({ label: item.label, value: item.count })), { title: "Education Profile" })}`)}
   ${section("Economic Insights", list(insightItems), barChart(regionalComparisonItems, { title: surveyVariables.income && surveyVariables.region ? "Regional Income Comparison" : "Regional Comparison", valueFormatter: (value) => (surveyVariables.income && surveyVariables.region ? formatLargeNumber(value) : value.toLocaleString()) }))}
   ${section("Recommended Analyses", list(recommendedAnalyses))}
+  <div class="report-footer">Generated by Social Data Explorer</div>
 </body>
 </html>`;
   }
@@ -2251,17 +2369,22 @@ export default function Home() {
   }
 
   function downloadReportPdf() {
-    const reportWindow = window.open("", "_blank");
+    const reportBlob = new Blob([buildResearchReportHtml()], { type: "text/html;charset=utf-8" });
+    const reportUrl = URL.createObjectURL(reportBlob);
+    const reportWindow = window.open(reportUrl, "_blank");
 
     if (!reportWindow) {
+      URL.revokeObjectURL(reportUrl);
       setError("Allow pop-ups to open the print-ready PDF report.");
       return;
     }
 
-    reportWindow.document.write(buildResearchReportHtml());
-    reportWindow.document.close();
-    reportWindow.focus();
-    reportWindow.print();
+    reportWindow.onload = () => {
+      reportWindow.document.title = "Social Data Explorer Research Report";
+      reportWindow.focus();
+      reportWindow.print();
+      window.setTimeout(() => URL.revokeObjectURL(reportUrl), 30000);
+    };
   }
 
   const hasData = rows.length > 0;
@@ -2682,6 +2805,12 @@ export default function Home() {
                             <span className={`severity-badge severity-${issue.severity}`}>{issue.severity}</span>
                             <strong>{issue.title}</strong>
                             <p>{friendlyColumnName(issue.column)}: {issue.detail}</p>
+                            {issue.affectedColumns?.length ? (
+                              <p className="mt-2 text-xs text-slate-500">
+                                {issue.affectedColumns.slice(0, 10).map(friendlyColumnName).join(", ")}
+                                {issue.affectedColumns.length > 10 ? `, + ${(issue.affectedColumns.length - 10).toLocaleString()} more` : ""}
+                              </p>
+                            ) : null}
                           </div>
                         ))
                       ) : (
@@ -2878,8 +3007,16 @@ export default function Home() {
                       <strong>{ageSummary ? formatValue(ageSummary.median) : "-"}</strong>
                     </div>
                     <div className="metric-tile">
-                      <span>Avg household size</span>
-                      <strong>{householdSummary ? formatValue(householdSummary.average) : "-"}</strong>
+                      <span>{derivedHouseholdSummary ? "Derived household size" : surveyVariables.household ? "Avg household size" : "Household grouping"}</span>
+                      <strong className="text-base">
+                        {derivedHouseholdSummary
+                          ? formatValue(derivedHouseholdSummary.average)
+                          : surveyVariables.household && householdSummary
+                            ? formatValue(householdSummary.average)
+                            : surveyVariables.householdId || surveyVariables.personId
+                              ? "Available"
+                              : "-"}
+                      </strong>
                     </div>
                   </div>
                 </GlassPanel>
@@ -2910,11 +3047,18 @@ export default function Home() {
                       </p>
                     )}
                   </GlassPanel>
-                  <FrequencyList items={ageBands} title={`Age structure${surveyVariables.age ? ` (${surveyVariables.age})` : ""}`} />
-                  <FrequencyList items={sexDistribution} title={`Sex / gender${surveyVariables.sex ? ` (${surveyVariables.sex})` : ""}`} />
-                  <FrequencyList items={regionDistribution} title={`Geography${surveyVariables.region ? ` (${surveyVariables.region})` : ""}`} />
-                  <FrequencyList items={householdDistribution} title={`Household structure${surveyVariables.household ? ` (${surveyVariables.household})` : ""}`} />
-                  <FrequencyList items={educationDistribution} title={`Education${surveyVariables.education ? ` (${surveyVariables.education})` : ""}`} />
+                  <FrequencyList items={ageBands} title={`Age structure${surveyVariables.age ? ` (${friendlyColumnName(surveyVariables.age)})` : ""}`} />
+                  <FrequencyList items={sexDistribution} title={`Sex / gender${surveyVariables.sex ? ` (${friendlyColumnName(surveyVariables.sex)})` : ""}`} />
+                  <FrequencyList items={regionDistribution} title={`Geography${surveyVariables.region ? ` (${friendlyColumnName(surveyVariables.region)})` : ""}`} />
+                  <FrequencyList
+                    items={derivedHouseholdDistribution.length ? derivedHouseholdDistribution : householdDistribution}
+                    title={
+                      derivedHouseholdDistribution.length
+                        ? "Household size derived from EPH identifiers"
+                        : `Household structure${surveyVariables.household ? ` (${friendlyColumnName(surveyVariables.household)})` : ""}`
+                    }
+                  />
+                  <FrequencyList items={educationDistribution} title={`Education${surveyVariables.education ? ` (${friendlyColumnName(surveyVariables.education)})` : ""}`} />
                 </div>
               </div>
             )}
@@ -3261,7 +3405,9 @@ export default function Home() {
                           <div className="mt-3 space-y-2">
                             {issues.length ? (
                               issues.slice(0, 5).map((issue) => (
-                                <p key={`${severity}-${issue.column}-${issue.title}`}>{issue.title}: {friendlyColumnName(issue.column)}</p>
+                                <p key={`${severity}-${issue.column}-${issue.title}`}>
+                                  {issue.title}: {issue.affectedColumns?.length ? `${issue.affectedColumns.length.toLocaleString()} columns` : friendlyColumnName(issue.column)}
+                                </p>
                               ))
                             ) : (
                               <p>No {severity} issues detected.</p>
